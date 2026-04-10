@@ -35,3 +35,10 @@ This project aims to build a high-quality RAG pipeline over complex technical do
 ## Status
 
 Project setup in progress.
+
+## Set up
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -e ".[dev]"
