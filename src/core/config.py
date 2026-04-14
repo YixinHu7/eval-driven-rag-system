@@ -24,7 +24,7 @@ class PostgresConfig(BaseModel):
     database_url: str = Field(
         default_factory=lambda: os.getenv(
             "DATABASE_URL",
-            "postgresql+psycopg://postgres:postgres@localhost:5433/eval_driven_rag",
+            "postgresql+psycopg://postgres:postgres@localhost:5432/eval_driven_rag",
         )
     )
     echo_sql: bool = False
