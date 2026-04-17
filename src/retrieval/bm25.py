@@ -38,7 +38,8 @@ class BM25Retriever:
         joined_rows: list[tuple[ChunkORM, DocumentORM]] = []
 
         for chunk, document in rows:
-            corpus_tokens.append(simple_tokenize(chunk.chunk_text))
+            search_text = f"{chunk.section_title} {chunk.chunk_text}"
+            corpus_tokens.append(simple_tokenize(search_text))
             joined_rows.append((chunk, document))
 
         bm25 = BM25Okapi(corpus_tokens)
