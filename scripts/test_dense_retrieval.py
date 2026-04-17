@@ -16,6 +16,7 @@ def main() -> None:
     for result in results:
         print("-" * 60)
         print(f"Rank: {result.rank}")
+        print(f"Score (cosine distance): {result.retrieval_score:.6f}")
         print(f"Chunk ID: {result.chunk_id}")
         print(f"Section: {result.section_title}")
         print(f"Method: {result.retrieval_method}")

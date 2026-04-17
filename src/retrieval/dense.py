@@ -15,11 +15,13 @@ class DenseRetriever:
         k = top_k or settings.retrieval.top_k
 
         query_embedding = self.embedder.embed_texts([query])[0]
+        distance_expr = ChunkORM.embedding.cosine_distance(query_embedding).label("distance")
 
         stmt = (
-            select(ChunkORM, DocumentORM)
+            select(ChunkORM, DocumentORM, distance_expr)
             .join(DocumentORM, ChunkORM.doc_id == DocumentORM.doc_id)
-            .order_by(ChunkORM.embedding.cosine_distance(query_embedding))
+            .where(ChunkORM.embedding.is_not(None))
+            .order_by(distance_expr.asc())
             .limit(k)
         )
 
@@ -27,7 +29,7 @@ class DenseRetriever:
 
         results: list[RetrievedChunk] = []
 
-        for rank, (chunk, document) in enumerate(rows, start=1):
+        for rank, (chunk, document, distance) in enumerate(rows, start=1):
             results.append(
                 RetrievedChunk(
                     chunk_id=chunk.chunk_id,
@@ -37,7 +39,7 @@ class DenseRetriever:
                     section_title=chunk.section_title,
                     section_path=chunk.section_path,
                     content=chunk.chunk_text,
-                    retrieval_score=float(rank),  # placeholder rank-based score for now
+                    retrieval_score=float(distance),
                     retrieval_method="dense",
                     rank=rank,
                 )
