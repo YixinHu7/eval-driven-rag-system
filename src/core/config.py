@@ -78,3 +78,6 @@ def load_settings(config_path: Optional[str] = None) -> Settings:
         raw_config = yaml.safe_load(f) or {}
 
     return Settings(**raw_config)
+
+
+settings = Settings()
