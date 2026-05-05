@@ -2,7 +2,7 @@ from fastapi import FastAPI
 
 from src.core.config import settings
 from src.api.routes.search import router as search_router
-
+from src.api.routes.answer import router as answer_router
 
 def create_app() -> FastAPI:
     app = FastAPI(
@@ -12,6 +12,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(search_router)
+    app.include_router(answer_router)
 
     @app.get("/health")
     def health_check() -> dict[str, str]:
