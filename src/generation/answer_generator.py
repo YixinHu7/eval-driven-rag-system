@@ -1,4 +1,5 @@
 from src.core.models import AnswerResponse, RetrievedChunk
+from src.generation.abstention import should_abstain
 from src.generation.citation_builder import build_citations
 
 
@@ -9,13 +10,16 @@ class SimpleAnswerGenerator:
         chunks: list[RetrievedChunk],
         retrieval_strategy: str,
     ) -> AnswerResponse:
-        if not chunks:
+        if should_abstain(chunks):
             return AnswerResponse(
-                answer="I could not find enough relevant documentation to answer this question.",
+                answer=(
+                    "I could not find enough relevant documentation to answer this question "
+                    "with confidence."
+                ),
                 citations=[],
                 query_type=None,
                 retrieval_strategy=retrieval_strategy,
-                confidence=0.0,
+                confidence=self._estimate_confidence(chunks),
                 abstained=True,
                 retrieved_chunks=[],
             )
