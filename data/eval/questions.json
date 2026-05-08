@@ -1,0 +1,38 @@
+[
+    {
+      "question_id": "q001",
+      "query": "What is a DaemonSet?",
+      "query_type": "conceptual",
+      "expected_section": "DaemonSet",
+      "expected_doc_id": "k8s_daemonset_demo",
+      "supported": true,
+      "reference_notes": "A DaemonSet ensures that all or some nodes run a copy of a Pod."
+    },
+    {
+      "question_id": "q002",
+      "query": "When should I use a DaemonSet?",
+      "query_type": "procedural",
+      "expected_section": "When to use a DaemonSet",
+      "expected_doc_id": "k8s_daemonset_demo",
+      "supported": true,
+      "reference_notes": "DaemonSets are typically used for cluster storage daemons, log collection daemons, and node monitoring daemons."
+    },
+    {
+      "question_id": "q003",
+      "query": "How does a DaemonSet respond when node labels change?",
+      "query_type": "constraint",
+      "expected_section": "Updating a DaemonSet",
+      "expected_doc_id": "k8s_daemonset_demo",
+      "supported": true,
+      "reference_notes": "The DaemonSet adds Pods to newly matching nodes and deletes Pods from newly non-matching nodes."
+    },
+    {
+      "question_id": "q004",
+      "query": "How do I bake a chocolate cake?",
+      "query_type": "out_of_domain",
+      "expected_section": null,
+      "expected_doc_id": null,
+      "supported": false,
+      "reference_notes": "This question is unrelated to the Kubernetes DaemonSet documentation and should be rejected or abstained."
+    }
+  ]
