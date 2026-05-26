@@ -8,7 +8,9 @@ from src.evaluation.dataset import load_eval_questions
 from src.evaluation.retrieval_metrics import (
     RetrievalEvalResult,
     RetrievalEvalSummary,
+    RetrievalEvalSliceSummary,
     evaluate_retrieval_result,
+    summarize_by_query_type,
     summarize_retrieval_results,
 )
 from src.retrieval.factory import get_retriever
@@ -19,6 +21,7 @@ def print_method_results(
     method: str,
     results: list[RetrievalEvalResult],
     summary: RetrievalEvalSummary,
+    slice_summaries: list[RetrievalEvalSliceSummary],
 ) -> None:
     print("=" * 100)
     print(f"Method: {method}")
@@ -28,6 +31,16 @@ def print_method_results(
     print(f"Supported questions: {summary.supported_questions}")
     print(f"Hit@k: {summary.hit_at_k:.3f}")
     print(f"Top-1 accuracy: {summary.top_1_accuracy:.3f}")
+    
+    print("\nBy query type:")
+    for slice_summary in slice_summaries:
+        print(
+            f"- {slice_summary.query_type}: "
+            f"questions={slice_summary.total_questions}, "
+            f"supported={slice_summary.supported_questions}, "
+            f"hit@k={slice_summary.hit_at_k:.3f}, "
+            f"top1={slice_summary.top_1_accuracy:.3f}"
+        )
 
     print("\nPer-question results:")
     for result in results:
@@ -46,6 +59,7 @@ def print_method_results(
 def write_json_report(
     output_path: Path,
     summaries: list[RetrievalEvalSummary],
+    slice_summaries: list[RetrievalEvalSliceSummary],
     results: list[RetrievalEvalResult],
 ) -> None:
     payload = {
@@ -57,6 +71,7 @@ def write_json_report(
             "embedding_dimensions": settings.embedding.embedding_dimensions,
         },
         "summaries": [summary.model_dump() for summary in summaries],
+        "slice_summaries": [summary.model_dump() for summary in slice_summaries],
         "results": [result.model_dump() for result in results],
     }
 
@@ -110,6 +125,7 @@ def main() -> None:
 
     all_results: list[RetrievalEvalResult] = []
     summaries: list[RetrievalEvalSummary] = []
+    all_slice_summaries: list[RetrievalEvalSliceSummary] = []
 
     with SessionLocal() as session:
         for method in methods:
@@ -134,10 +150,16 @@ def main() -> None:
                 method=method,
                 results=method_results,
             )
+            
+            slice_summaries = summarize_by_query_type(
+                method=method,
+                results=method_results,
+            )
 
-            print_method_results(method, method_results, summary)
+            print_method_results(method, method_results, summary, slice_summaries)
 
             summaries.append(summary)
+            all_slice_summaries.extend(slice_summaries)
             all_results.extend(method_results)
 
     output_dir = settings.data.experiments_dir
@@ -147,7 +169,7 @@ def main() -> None:
     json_path = output_dir / f"retrieval_eval_{timestamp}.json"
     csv_path = output_dir / f"retrieval_eval_{timestamp}.csv"
 
-    write_json_report(json_path, summaries, all_results)
+    write_json_report(json_path, summaries, all_slice_summaries, all_results)
     write_csv_report(csv_path, all_results)
 
     print("\nSaved evaluation reports:")
