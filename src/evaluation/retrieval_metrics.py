@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from pydantic import BaseModel
 
 from src.core.models import RetrievedChunk
@@ -19,6 +21,15 @@ class RetrievalEvalResult(BaseModel):
 
 class RetrievalEvalSummary(BaseModel):
     method: str
+    total_questions: int
+    supported_questions: int
+    hit_at_k: float
+    top_1_accuracy: float
+
+
+class RetrievalEvalSliceSummary(BaseModel):
+    method: str
+    query_type: str
     total_questions: int
     supported_questions: int
     hit_at_k: float
@@ -89,3 +100,51 @@ def summarize_retrieval_results(
         hit_at_k=hit_at_k,
         top_1_accuracy=top_1_accuracy,
     )
+
+
+def summarize_by_query_type(
+    method: str,
+    results: list[RetrievalEvalResult],
+) -> list[RetrievalEvalSliceSummary]:
+    grouped: dict[str, list[RetrievalEvalResult]] = defaultdict(list)
+
+    for result in results:
+        grouped[result.query_type].append(result)
+
+    summaries: list[RetrievalEvalSliceSummary] = []
+
+    for query_type, group_results in sorted(grouped.items()):
+        supported_results = [result for result in group_results if result.supported]
+
+        if not supported_results:
+            summaries.append(
+                RetrievalEvalSliceSummary(
+                    method=method,
+                    query_type=query_type,
+                    total_questions=len(group_results),
+                    supported_questions=0,
+                    hit_at_k=0.0,
+                    top_1_accuracy=0.0,
+                )
+            )
+            continue
+
+        hit_at_k = sum(result.hit_at_k for result in supported_results) / len(
+            supported_results
+        )
+        top_1_accuracy = sum(result.top_1_match for result in supported_results) / len(
+            supported_results
+        )
+
+        summaries.append(
+            RetrievalEvalSliceSummary(
+                method=method,
+                query_type=query_type,
+                total_questions=len(group_results),
+                supported_questions=len(supported_results),
+                hit_at_k=hit_at_k,
+                top_1_accuracy=top_1_accuracy,
+            )
+        )
+
+    return summaries
