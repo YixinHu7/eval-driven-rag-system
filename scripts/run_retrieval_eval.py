@@ -1,6 +1,13 @@
+import csv
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
 from src.core.config import settings
 from src.evaluation.dataset import load_eval_questions
 from src.evaluation.retrieval_metrics import (
+    RetrievalEvalResult,
+    RetrievalEvalSummary,
     evaluate_retrieval_result,
     summarize_retrieval_results,
 )
@@ -8,7 +15,11 @@ from src.retrieval.factory import get_retriever
 from src.storage.db import SessionLocal
 
 
-def print_method_results(method: str, results, summary) -> None:
+def print_method_results(
+    method: str,
+    results: list[RetrievalEvalResult],
+    summary: RetrievalEvalSummary,
+) -> None:
     print("=" * 100)
     print(f"Method: {method}")
     print("=" * 100)
@@ -32,14 +43,78 @@ def print_method_results(method: str, results, summary) -> None:
         print(f"Retrieved sections: {result.retrieved_sections}")
 
 
+def write_json_report(
+    output_path: Path,
+    summaries: list[RetrievalEvalSummary],
+    results: list[RetrievalEvalResult],
+) -> None:
+    payload = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "config": {
+            "top_k": settings.retrieval.top_k,
+            "candidate_k": settings.retrieval.candidate_k,
+            "embedding_model": settings.embedding.model_name,
+            "embedding_dimensions": settings.embedding.embedding_dimensions,
+        },
+        "summaries": [summary.model_dump() for summary in summaries],
+        "results": [result.model_dump() for result in results],
+    }
+
+    output_path.write_text(
+        json.dumps(payload, indent=2),
+        encoding="utf-8",
+    )
+
+
+def write_csv_report(
+    output_path: Path,
+    results: list[RetrievalEvalResult],
+) -> None:
+    fieldnames = [
+        "question_id",
+        "method",
+        "query_type",
+        "supported",
+        "query",
+        "expected_section",
+        "top_1_section",
+        "hit_at_k",
+        "top_1_match",
+        "retrieved_sections",
+    ]
+
+    with output_path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for result in results:
+            writer.writerow(
+                {
+                    "question_id": result.question_id,
+                    "method": result.method,
+                    "query_type": result.query_type,
+                    "supported": result.supported,
+                    "query": result.query,
+                    "expected_section": result.expected_section,
+                    "top_1_section": result.top_1_section,
+                    "hit_at_k": result.hit_at_k,
+                    "top_1_match": result.top_1_match,
+                    "retrieved_sections": " | ".join(result.retrieved_sections),
+                }
+            )
+
+
 def main() -> None:
     questions = load_eval_questions(settings.evaluation.eval_data_path)
     methods = ["dense", "bm25", "hybrid"]
 
+    all_results: list[RetrievalEvalResult] = []
+    summaries: list[RetrievalEvalSummary] = []
+
     with SessionLocal() as session:
         for method in methods:
             retriever = get_retriever(method)
-            method_results = []
+            method_results: list[RetrievalEvalResult] = []
 
             for question in questions:
                 chunks = retriever.retrieve(
@@ -61,6 +136,23 @@ def main() -> None:
             )
 
             print_method_results(method, method_results, summary)
+
+            summaries.append(summary)
+            all_results.extend(method_results)
+
+    output_dir = settings.data.experiments_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    json_path = output_dir / f"retrieval_eval_{timestamp}.json"
+    csv_path = output_dir / f"retrieval_eval_{timestamp}.csv"
+
+    write_json_report(json_path, summaries, all_results)
+    write_csv_report(csv_path, all_results)
+
+    print("\nSaved evaluation reports:")
+    print(f"- {json_path}")
+    print(f"- {csv_path}")
 
 
 if __name__ == "__main__":
