@@ -10,7 +10,7 @@ class SimpleAnswerGenerator:
         chunks: list[RetrievedChunk],
         retrieval_strategy: str,
     ) -> AnswerResponse:
-        if should_abstain(chunks):
+        if should_abstain(query, chunks):
             return AnswerResponse(
                 answer=(
                     "I could not find enough relevant documentation to answer this question "
