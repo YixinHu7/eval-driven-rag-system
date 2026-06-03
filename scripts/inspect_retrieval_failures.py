@@ -1,4 +1,5 @@
 import json
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +34,9 @@ def classify_failure(result: dict[str, Any]) -> str:
     top_1_section = result.get("top_1_section")
 
     if not supported:
-        return "unsupported_query_retrieved"
+        if result.get("retrieved_doc_sections"):
+            return "unsupported_query_retrieved"
+        return "unsupported_query_no_retrieval"
 
     if hit_at_k and not top_1_match:
         return "expected_section_in_top_k_but_not_top_1"
@@ -50,17 +53,61 @@ def classify_failure(result: dict[str, Any]) -> str:
     return "unknown"
 
 
+def is_failure(result: dict[str, Any], include_unsupported: bool = False) -> bool:
+    if result["supported"]:
+        return not result["top_1_match"]
+
+    if include_unsupported:
+        return bool(result.get("retrieved_doc_sections"))
+
+    return False
+
+
+def format_doc_section(doc_id: str | None, section: str | None) -> str | None:
+    if doc_id and section:
+        return f"{doc_id}::{section}"
+    return None
+
+
+def print_failure_summary(failures: list[dict[str, Any]]) -> None:
+    print("\n" + "=" * 120)
+    print("Failure Summary")
+    print("=" * 120)
+
+    if not failures:
+        print("No failures found.")
+        return
+
+    by_method: dict[str, Counter[str]] = defaultdict(Counter)
+    overall_counter: Counter[str] = Counter()
+
+    for failure in failures:
+        method = failure["method"]
+        failure_type = classify_failure(failure)
+        by_method[method][failure_type] += 1
+        overall_counter[failure_type] += 1
+
+    print("\nOverall failure counts:")
+    for failure_type, count in overall_counter.most_common():
+        print(f"- {failure_type}: {count}")
+
+    print("\nFailure counts by method:")
+    for method in sorted(by_method):
+        total = sum(by_method[method].values())
+        print(f"\n{method} total failures: {total}")
+        for failure_type, count in by_method[method].most_common():
+            print(f"  - {failure_type}: {count}")
+
+
 def print_failure(result: dict[str, Any]) -> None:
-    expected = (
-        f"{result.get('expected_doc_id')}::{result.get('expected_section')}"
-        if result.get("expected_doc_id") and result.get("expected_section")
-        else None
+    expected = format_doc_section(
+        result.get("expected_doc_id"),
+        result.get("expected_section"),
     )
 
-    top_1 = (
-        f"{result.get('top_1_doc_id')}::{result.get('top_1_section')}"
-        if result.get("top_1_doc_id") and result.get("top_1_section")
-        else None
+    top_1 = format_doc_section(
+        result.get("top_1_doc_id"),
+        result.get("top_1_section"),
     )
 
     print("-" * 120)
@@ -76,6 +123,21 @@ def print_failure(result: dict[str, Any]) -> None:
         print(f"  - {item}")
 
 
+def print_failures_by_method(failures: list[dict[str, Any]]) -> None:
+    failures_by_method: dict[str, list[dict[str, Any]]] = defaultdict(list)
+
+    for failure in failures:
+        failures_by_method[failure["method"]].append(failure)
+
+    for method, method_failures in sorted(failures_by_method.items()):
+        print("\n" + "=" * 120)
+        print(f"Method: {method} | Failures: {len(method_failures)}")
+        print("=" * 120)
+
+        for failure in method_failures:
+            print_failure(failure)
+
+
 def main() -> None:
     report_path = find_latest_retrieval_report()
     print(f"Inspecting retrieval report: {report_path}")
@@ -86,23 +148,13 @@ def main() -> None:
     failures = [
         result
         for result in results
-        if result["supported"] and not result["top_1_match"]
+        if is_failure(result, include_unsupported=False)
     ]
 
     print(f"Found {len(failures)} supported-query Top-1 failures")
 
-    failures_by_method: dict[str, list[dict[str, Any]]] = {}
-
-    for failure in failures:
-        failures_by_method.setdefault(failure["method"], []).append(failure)
-
-    for method, method_failures in failures_by_method.items():
-        print("\n" + "=" * 120)
-        print(f"Method: {method} | Failures: {len(method_failures)}")
-        print("=" * 120)
-
-        for failure in method_failures:
-            print_failure(failure)
+    print_failure_summary(failures)
+    print_failures_by_method(failures)
 
 
 if __name__ == "__main__":
