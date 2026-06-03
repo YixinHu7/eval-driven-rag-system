@@ -12,11 +12,14 @@ class RetrievalEvalResult(BaseModel):
     method: str
     query_type: str
     supported: bool
+    expected_doc_id: str | None
     expected_section: str | None
+    top_1_doc_id: str | None
     top_1_section: str | None
     hit_at_k: bool
     top_1_match: bool
     retrieved_sections: list[str]
+    retrieved_doc_sections: list[str]
 
 
 class RetrievalEvalSummary(BaseModel):
@@ -42,7 +45,16 @@ def evaluate_retrieval_result(
     retrieved_chunks: list[RetrievedChunk],
 ) -> RetrievalEvalResult:
     retrieved_sections = [chunk.section_title for chunk in retrieved_chunks]
-    top_1_section = retrieved_sections[0] if retrieved_sections else None
+    retrieved_doc_sections = [
+        f"{chunk.doc_id}::{chunk.section_title}" for chunk in retrieved_chunks
+    ]
+
+    top_1_chunk = retrieved_chunks[0] if retrieved_chunks else None
+    top_1_doc_id = top_1_chunk.doc_id if top_1_chunk else None
+    top_1_section = top_1_chunk.section_title if top_1_chunk else None
+    top_1_doc_section = (
+        f"{top_1_doc_id}::{top_1_section}" if top_1_chunk else None
+    )
 
     if not question.supported:
         return RetrievalEvalResult(
@@ -51,27 +63,34 @@ def evaluate_retrieval_result(
             method=method,
             query_type=question.query_type,
             supported=question.supported,
+            expected_doc_id=question.expected_doc_id,
             expected_section=question.expected_section,
+            top_1_doc_id=top_1_doc_id,
             top_1_section=top_1_section,
             hit_at_k=False,
             top_1_match=False,
             retrieved_sections=retrieved_sections,
+            retrieved_doc_sections=retrieved_doc_sections,
         )
 
-    hit_at_k = question.expected_section in retrieved_sections
-    top_1_match = top_1_section == question.expected_section
-
+    expected_doc_section = f"{question.expected_doc_id}::{question.expected_section}"
+    hit_at_k = expected_doc_section in retrieved_doc_sections
+    top_1_match = top_1_doc_section == expected_doc_section 
+    
     return RetrievalEvalResult(
         question_id=question.question_id,
         query=question.query,
         method=method,
         query_type=question.query_type,
         supported=question.supported,
+        expected_doc_id=question.expected_doc_id,
         expected_section=question.expected_section,
+        top_1_doc_id=top_1_doc_id,
         top_1_section=top_1_section,
         hit_at_k=hit_at_k,
         top_1_match=top_1_match,
         retrieved_sections=retrieved_sections,
+        retrieved_doc_sections=retrieved_doc_sections,
     )
 
 

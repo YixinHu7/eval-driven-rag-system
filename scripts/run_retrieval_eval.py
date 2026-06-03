@@ -44,16 +44,28 @@ def print_method_results(
 
     print("\nPer-question results:")
     for result in results:
+        expected_doc_section = (
+            f"{result.expected_doc_id}::{result.expected_section}"
+            if result.expected_doc_id and result.expected_section
+            else None
+        )
+
+        top_1_doc_section = (
+            f"{result.top_1_doc_id}::{result.top_1_section}"
+            if result.top_1_doc_id and result.top_1_section
+            else None
+        )
+
         print("-" * 100)
         print(f"ID: {result.question_id}")
         print(f"Type: {result.query_type}")
         print(f"Supported: {result.supported}")
         print(f"Query: {result.query}")
-        print(f"Expected section: {result.expected_section}")
-        print(f"Top-1 section: {result.top_1_section}")
+        print(f"Expected doc-section: {expected_doc_section}")
+        print(f"Top-1 doc-section: {top_1_doc_section}")
         print(f"Hit@k: {result.hit_at_k}")
         print(f"Top-1 match: {result.top_1_match}")
-        print(f"Retrieved sections: {result.retrieved_sections}")
+        print(f"Retrieved doc-sections: {result.retrieved_doc_sections}")
 
 
 def write_json_report(
@@ -91,11 +103,13 @@ def write_csv_report(
         "query_type",
         "supported",
         "query",
+        "expected_doc_id",
         "expected_section",
+        "top_1_doc_id",
         "top_1_section",
         "hit_at_k",
         "top_1_match",
-        "retrieved_sections",
+        "retrieved_doc_sections",
     ]
 
     with output_path.open("w", encoding="utf-8", newline="") as f:
@@ -110,11 +124,13 @@ def write_csv_report(
                     "query_type": result.query_type,
                     "supported": result.supported,
                     "query": result.query,
+                    "expected_doc_id": result.expected_doc_id,
                     "expected_section": result.expected_section,
+                    "top_1_doc_id": result.top_1_doc_id,
                     "top_1_section": result.top_1_section,
                     "hit_at_k": result.hit_at_k,
                     "top_1_match": result.top_1_match,
-                    "retrieved_sections": " | ".join(result.retrieved_sections),
+                    "retrieved_doc_sections": " | ".join(result.retrieved_doc_sections),
                 }
             )
 
