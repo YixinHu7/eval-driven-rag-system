@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from src.core.config import settings
 from src.core.models import RetrievedChunk
 from src.storage.schema import ChunkORM, DocumentORM
+from src.retrieval.text_builder import build_chunk_search_text
 
 
 def simple_tokenize(text: str) -> list[str]:
@@ -38,7 +39,7 @@ class BM25Retriever:
         joined_rows: list[tuple[ChunkORM, DocumentORM]] = []
 
         for chunk, document in rows:
-            search_text = f"{chunk.section_title} {chunk.chunk_text}"
+            search_text = build_chunk_search_text(chunk)
             corpus_tokens.append(simple_tokenize(search_text))
             joined_rows.append((chunk, document))
 

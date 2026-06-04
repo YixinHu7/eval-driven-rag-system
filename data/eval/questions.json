@@ -1,185 +1,221 @@
 [
     {
       "question_id": "q001",
-      "query": "What is a DaemonSet?",
+      "query": "What is a Deployment in Kubernetes?",
       "query_type": "conceptual",
-      "expected_section": "DaemonSet",
-      "expected_doc_id": "k8s_daemonset_demo",
+      "expected_section": "Deployments",
+      "expected_doc_id": "k8s_deployment",
       "supported": true,
-      "reference_notes": "A DaemonSet ensures that all or some nodes run a copy of a Pod."
+      "reference_notes": "A Deployment provides declarative updates for Pods and ReplicaSets."
     },
     {
       "question_id": "q002",
-      "query": "What does a DaemonSet do?",
+      "query": "What is a StatefulSet used for?",
       "query_type": "conceptual",
-      "expected_section": "DaemonSet",
-      "expected_doc_id": "k8s_daemonset_demo",
+      "expected_section": "StatefulSets",
+      "expected_doc_id": "k8s_statefulset",
       "supported": true,
-      "reference_notes": "It ensures that all or some nodes run a copy of a Pod."
+      "reference_notes": "StatefulSets manage stateful applications and provide stable network identities and persistent storage."
     },
     {
       "question_id": "q003",
-      "query": "How are DaemonSet Pods handled when nodes are added?",
+      "query": "What is a Kubernetes Service?",
       "query_type": "conceptual",
-      "expected_section": "DaemonSet",
-      "expected_doc_id": "k8s_daemonset_demo",
+      "expected_section": "Service",
+      "expected_doc_id": "k8s_service",
       "supported": true,
-      "reference_notes": "As nodes are added to the cluster, Pods are added to them."
+      "reference_notes": "A Service exposes an application running on Pods as a network service."
     },
     {
       "question_id": "q004",
-      "query": "What happens to DaemonSet Pods when nodes are removed?",
+      "query": "What is an Ingress in Kubernetes?",
       "query_type": "conceptual",
-      "expected_section": "DaemonSet",
-      "expected_doc_id": "k8s_daemonset_demo",
+      "expected_section": "What is Ingress?",
+      "expected_doc_id": "k8s_ingress",
       "supported": true,
-      "reference_notes": "As nodes are removed from the cluster, those Pods are garbage collected."
+      "reference_notes": "Ingress manages external access to services in a cluster, typically HTTP."
     },
     {
       "question_id": "q005",
-      "query": "Does a DaemonSet run Pods on nodes?",
+      "query": "What is a ConfigMap?",
       "query_type": "conceptual",
-      "expected_section": "DaemonSet",
-      "expected_doc_id": "k8s_daemonset_demo",
+      "expected_section": "ConfigMaps",
+      "expected_doc_id": "k8s_configmap",
       "supported": true,
-      "reference_notes": "A DaemonSet ensures that all or some nodes run a copy of a Pod."
+      "reference_notes": "A ConfigMap stores non-confidential configuration data in key-value pairs."
+    },
+    {
+      "question_id": "q006",
+      "query": "What is a Kubernetes Secret?",
+      "query_type": "conceptual",
+      "expected_section": "Secrets",
+      "expected_doc_id": "k8s_secret",
+      "supported": true,
+      "reference_notes": "A Secret stores sensitive information such as passwords, tokens, or keys."
     },
   
     {
-      "question_id": "q006",
-      "query": "When should I use a DaemonSet?",
-      "query_type": "procedural",
-      "expected_section": "When to use a DaemonSet",
-      "expected_doc_id": "k8s_daemonset_demo",
-      "supported": true,
-      "reference_notes": "DaemonSets are typically used for cluster storage daemons, log collection daemons, and node monitoring daemons."
-    },
-    {
       "question_id": "q007",
-      "query": "Can I use a DaemonSet for log collection?",
+      "query": "How do I create a Deployment?",
       "query_type": "procedural",
-      "expected_section": "When to use a DaemonSet",
-      "expected_doc_id": "k8s_daemonset_demo",
+      "expected_section": "Creating a Deployment",
+      "expected_doc_id": "k8s_deployment",
       "supported": true,
-      "reference_notes": "DaemonSets are typically used for log collection daemons."
+      "reference_notes": "A Deployment can be created using a Deployment manifest."
     },
     {
       "question_id": "q008",
-      "query": "Can DaemonSets run node monitoring daemons?",
+      "query": "What kinds of keys can a ConfigMap use?",
       "query_type": "procedural",
-      "expected_section": "When to use a DaemonSet",
-      "expected_doc_id": "k8s_daemonset_demo",
+      "expected_section": "property-like keys; each key maps to a simple value",
+      "expected_doc_id": "k8s_configmap",
       "supported": true,
-      "reference_notes": "DaemonSets are typically used for node monitoring daemons."
+      "reference_notes": "ConfigMaps can use property-like keys where each key maps to a simple value."
     },
     {
       "question_id": "q009",
-      "query": "What type of storage workload can a DaemonSet run?",
+      "query": "How do I configure a liveness probe?",
       "query_type": "procedural",
-      "expected_section": "When to use a DaemonSet",
-      "expected_doc_id": "k8s_daemonset_demo",
+      "expected_section": "Define a liveness command",
+      "expected_doc_id": "k8s_probes",
       "supported": true,
-      "reference_notes": "DaemonSets are typically used for running cluster storage daemons."
+      "reference_notes": "A liveness probe can be configured using a command, HTTP request, or TCP socket."
     },
     {
       "question_id": "q010",
-      "query": "What are common use cases for DaemonSets?",
+      "query": "How can I expose an application running in Pods?",
       "query_type": "procedural",
-      "expected_section": "When to use a DaemonSet",
-      "expected_doc_id": "k8s_daemonset_demo",
+      "expected_section": "Defining a Service",
+      "expected_doc_id": "k8s_service",
       "supported": true,
-      "reference_notes": "Common uses include cluster storage daemons, log collection daemons, and node monitoring daemons."
+      "reference_notes": "A Service defines a logical set of Pods and a policy to access them."
     },
-  
     {
       "question_id": "q011",
-      "query": "How does a DaemonSet respond when node labels change?",
-      "query_type": "constraint",
-      "expected_section": "Updating a DaemonSet",
-      "expected_doc_id": "k8s_daemonset_demo",
+      "query": "How do I use a Secret as an environment variable?",
+      "query_type": "procedural",
+      "expected_section": "Using Secrets as environment variables",
+      "expected_doc_id": "k8s_secret",
       "supported": true,
-      "reference_notes": "The DaemonSet adds Pods to newly matching nodes and deletes Pods from newly non-matching nodes."
+      "reference_notes": "Secrets can be exposed to containers as environment variables."
     },
     {
       "question_id": "q012",
-      "query": "What happens when a node newly matches a DaemonSet?",
-      "query_type": "constraint",
-      "expected_section": "Updating a DaemonSet",
-      "expected_doc_id": "k8s_daemonset_demo",
+      "query": "How do I set up Ingress rules?",
+      "query_type": "procedural",
+      "expected_section": "Ingress rules",
+      "expected_doc_id": "k8s_ingress",
       "supported": true,
-      "reference_notes": "The DaemonSet promptly adds Pods to newly matching nodes."
-    },
-    {
-      "question_id": "q013",
-      "query": "What happens when a node no longer matches a DaemonSet?",
-      "query_type": "constraint",
-      "expected_section": "Updating a DaemonSet",
-      "expected_doc_id": "k8s_daemonset_demo",
-      "supported": true,
-      "reference_notes": "The DaemonSet deletes Pods from newly non-matching nodes."
-    },
-    {
-      "question_id": "q014",
-      "query": "Does a DaemonSet react to label changes?",
-      "query_type": "constraint",
-      "expected_section": "Updating a DaemonSet",
-      "expected_doc_id": "k8s_daemonset_demo",
-      "supported": true,
-      "reference_notes": "If node labels are changed, the DaemonSet updates Pods on newly matching or non-matching nodes."
-    },
-    {
-      "question_id": "q015",
-      "query": "When does a DaemonSet delete Pods?",
-      "query_type": "constraint",
-      "expected_section": "Updating a DaemonSet",
-      "expected_doc_id": "k8s_daemonset_demo",
-      "supported": true,
-      "reference_notes": "It deletes Pods from newly non-matching nodes."
+      "reference_notes": "Ingress rules define how HTTP requests are routed to backend services."
     },
   
     {
+      "question_id": "q013",
+      "query": "What limitations should I know about ConfigMaps?",
+      "query_type": "constraint",
+      "expected_section": "ConfigMap object",
+      "expected_doc_id": "k8s_configmap",
+      "supported": true,
+      "reference_notes": "ConfigMaps are for non-confidential data and have object size limitations."
+    },
+    {
+      "question_id": "q014",
+      "query": "What should I consider before using Secrets?",
+      "query_type": "constraint",
+      "expected_section": "Caution:",
+      "expected_doc_id": "k8s_secret",
+      "supported": true,
+      "reference_notes": "Secrets are base64-encoded and require care with access control and encryption."
+    },
+    {
+      "question_id": "q015",
+      "query": "What are the stable identity guarantees of StatefulSets?",
+      "query_type": "constraint",
+      "expected_section": "Stable Network ID",
+      "expected_doc_id": "k8s_statefulset",
+      "supported": true,
+      "reference_notes": "StatefulSets provide stable network identities for Pods."
+    },
+    {
       "question_id": "q016",
+      "query": "What happens if a Deployment rollout fails?",
+      "query_type": "constraint",
+      "expected_section": "Failed Deployment",
+      "expected_doc_id": "k8s_deployment",
+      "supported": true,
+      "reference_notes": "A Deployment may fail due to quota, readiness probe failures, image pull errors, or other reasons."
+    },
+    {
+      "question_id": "q017",
+      "query": "What are the prerequisites for using Ingress?",
+      "query_type": "constraint",
+      "expected_section": "Prerequisites",
+      "expected_doc_id": "k8s_ingress",
+      "supported": true,
+      "reference_notes": "An Ingress controller is required for Ingress to work."
+    },
+    {
+      "question_id": "q018",
+      "query": "What are limitations of readiness and liveness probes?",
+      "query_type": "constraint",
+      "expected_section": "Caution:",
+      "expected_doc_id": "k8s_probes",
+      "supported": true,
+      "reference_notes": "Probe configuration must be designed carefully because incorrect probes can affect application availability."
+    },
+  
+    {
+      "question_id": "q019",
       "query": "How do I bake a chocolate cake?",
       "query_type": "out_of_domain",
       "expected_section": null,
       "expected_doc_id": null,
       "supported": false,
-      "reference_notes": "This question is unrelated to the Kubernetes DaemonSet documentation and should be rejected or abstained."
+      "reference_notes": "This question is unrelated to Kubernetes documentation and should be abstained."
     },
     {
-      "question_id": "q017",
+      "question_id": "q020",
       "query": "What is the best way to cook pasta?",
       "query_type": "out_of_domain",
       "expected_section": null,
       "expected_doc_id": null,
       "supported": false,
-      "reference_notes": "This question is unrelated to the Kubernetes DaemonSet documentation and should be rejected or abstained."
+      "reference_notes": "This question is unrelated to Kubernetes documentation and should be abstained."
     },
     {
-      "question_id": "q018",
+      "question_id": "q021",
       "query": "Who won the last NBA championship?",
       "query_type": "out_of_domain",
       "expected_section": null,
       "expected_doc_id": null,
       "supported": false,
-      "reference_notes": "This question is unrelated to the Kubernetes DaemonSet documentation and should be rejected or abstained."
+      "reference_notes": "This question is unrelated to Kubernetes documentation and should be abstained."
     },
     {
-      "question_id": "q019",
+      "question_id": "q022",
       "query": "How do I file a tax return?",
       "query_type": "out_of_domain",
       "expected_section": null,
       "expected_doc_id": null,
       "supported": false,
-      "reference_notes": "This question is unrelated to the Kubernetes DaemonSet documentation and should be rejected or abstained."
+      "reference_notes": "This question is unrelated to Kubernetes documentation and should be abstained."
     },
     {
-      "question_id": "q020",
+      "question_id": "q023",
       "query": "What are the symptoms of the flu?",
       "query_type": "out_of_domain",
       "expected_section": null,
       "expected_doc_id": null,
       "supported": false,
-      "reference_notes": "This question is unrelated to the Kubernetes DaemonSet documentation and should be rejected or abstained."
+      "reference_notes": "This question is unrelated to Kubernetes documentation and should be abstained."
+    },
+    {
+      "question_id": "q024",
+      "query": "What is the plot of La La Land?",
+      "query_type": "out_of_domain",
+      "expected_section": null,
+      "expected_doc_id": null,
+      "supported": false,
+      "reference_notes": "This question is unrelated to Kubernetes documentation and should be abstained."
     }
   ]
