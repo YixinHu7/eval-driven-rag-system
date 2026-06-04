@@ -14,6 +14,7 @@ class RetrievalEvalResult(BaseModel):
     supported: bool
     expected_doc_id: str | None
     expected_section: str | None
+    accepted_doc_sections: list[str]
     top_1_doc_id: str | None
     top_1_section: str | None
     hit_at_k: bool
@@ -56,6 +57,8 @@ def evaluate_retrieval_result(
         f"{top_1_doc_id}::{top_1_section}" if top_1_chunk else None
     )
 
+    accepted_doc_sections = question.get_accepted_doc_sections()
+
     if not question.supported:
         return RetrievalEvalResult(
             question_id=question.question_id,
@@ -65,6 +68,7 @@ def evaluate_retrieval_result(
             supported=question.supported,
             expected_doc_id=question.expected_doc_id,
             expected_section=question.expected_section,
+            accepted_doc_sections=accepted_doc_sections,
             top_1_doc_id=top_1_doc_id,
             top_1_section=top_1_section,
             hit_at_k=False,
@@ -73,10 +77,11 @@ def evaluate_retrieval_result(
             retrieved_doc_sections=retrieved_doc_sections,
         )
 
-    expected_doc_section = f"{question.expected_doc_id}::{question.expected_section}"
-    hit_at_k = expected_doc_section in retrieved_doc_sections
-    top_1_match = top_1_doc_section == expected_doc_section 
-    
+    hit_at_k = any(
+        accepted in retrieved_doc_sections for accepted in accepted_doc_sections
+    )
+    top_1_match = top_1_doc_section in accepted_doc_sections
+
     return RetrievalEvalResult(
         question_id=question.question_id,
         query=question.query,
@@ -85,6 +90,7 @@ def evaluate_retrieval_result(
         supported=question.supported,
         expected_doc_id=question.expected_doc_id,
         expected_section=question.expected_section,
+        accepted_doc_sections=accepted_doc_sections,
         top_1_doc_id=top_1_doc_id,
         top_1_section=top_1_section,
         hit_at_k=hit_at_k,

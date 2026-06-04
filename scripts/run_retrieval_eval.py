@@ -62,6 +62,7 @@ def print_method_results(
         print(f"Supported: {result.supported}")
         print(f"Query: {result.query}")
         print(f"Expected doc-section: {expected_doc_section}")
+        print(f"Accepted doc-sections: {result.accepted_doc_sections}")
         print(f"Top-1 doc-section: {top_1_doc_section}")
         print(f"Hit@k: {result.hit_at_k}")
         print(f"Top-1 match: {result.top_1_match}")
@@ -105,6 +106,7 @@ def write_csv_report(
         "query",
         "expected_doc_id",
         "expected_section",
+        "accepted_doc_sections",
         "top_1_doc_id",
         "top_1_section",
         "hit_at_k",
@@ -126,6 +128,7 @@ def write_csv_report(
                     "query": result.query,
                     "expected_doc_id": result.expected_doc_id,
                     "expected_section": result.expected_section,
+                    "accepted_doc_sections": " | ".join(result.accepted_doc_sections),
                     "top_1_doc_id": result.top_1_doc_id,
                     "top_1_section": result.top_1_section,
                     "hit_at_k": result.hit_at_k,

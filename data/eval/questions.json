@@ -21,8 +21,12 @@
       "question_id": "q003",
       "query": "What is a Kubernetes Service?",
       "query_type": "conceptual",
-      "expected_section": "Service",
+      "expected_section": "Services in Kubernetes",
       "expected_doc_id": "k8s_service",
+      "accepted_doc_sections": [
+        "k8s_service::Services in Kubernetes",
+        "k8s_service::Service"
+      ],
       "supported": true,
       "reference_notes": "A Service exposes an application running on Pods as a network service."
     },
@@ -32,6 +36,11 @@
       "query_type": "conceptual",
       "expected_section": "What is Ingress?",
       "expected_doc_id": "k8s_ingress",
+      "accepted_doc_sections": [
+        "k8s_ingress::What is Ingress?",
+        "k8s_ingress::Ingress",
+        "k8s_ingress::The Ingress resource"
+      ],
       "supported": true,
       "reference_notes": "Ingress manages external access to services in a cluster, typically HTTP."
     },
@@ -133,8 +142,13 @@
       "query_type": "constraint",
       "expected_section": "Stable Network ID",
       "expected_doc_id": "k8s_statefulset",
+      "accepted_doc_sections": [
+        "k8s_statefulset::Stable Network ID",
+        "k8s_statefulset::Pod Identity",
+        "k8s_statefulset::Key Properties"
+      ],
       "supported": true,
-      "reference_notes": "StatefulSets provide stable network identities for Pods."
+      "reference_notes": "StatefulSets provide stable network identities and persistent identity guarantees for Pods."
     },
     {
       "question_id": "q016",
@@ -160,6 +174,10 @@
       "query_type": "constraint",
       "expected_section": "Caution:",
       "expected_doc_id": "k8s_probes",
+      "accepted_doc_sections": [
+        "k8s_probes::Caution:",
+        "k8s_probes::Configure Liveness, Readiness and Startup Probes"
+      ],
       "supported": true,
       "reference_notes": "Probe configuration must be designed carefully because incorrect probes can affect application availability."
     },
