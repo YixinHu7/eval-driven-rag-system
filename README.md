@@ -1,6 +1,6 @@
 # Evaluation-Driven RAG System
 
-A production-oriented Retrieval-Augmented Generation (RAG) system for technical documentation, designed around retrieval experimentation, grounded answers, citation support, and evaluation-driven optimization.
+A production-oriented Retrieval-Augmented Generation (RAG) system for technical documentation, designed around retrieval experimentation, grounded answers, citation support, abstention, and evaluation-driven optimization.
 
 This project is not intended to be a simple chatbot demo. It is built as a modular RAG platform where retrieval strategies, answer behavior, and failure modes can be evaluated and improved systematically.
 
@@ -30,7 +30,8 @@ The goal of this project is to build a high-quality RAG pipeline over complex te
 
 ### Ingestion
 
-- Markdown document parsing
+- Real Kubernetes documentation ingestion
+- Markdown and web document parsing
 - Text cleaning
 - Heading-aware chunking
 - Chunk metadata preservation, including section titles and section paths
@@ -39,6 +40,7 @@ The goal of this project is to build a high-quality RAG pipeline over complex te
 
 - Local embedding pipeline using `sentence-transformers`
 - Configurable embedding model and embedding dimensions
+- Metadata-enriched chunk representation
 - Embeddings stored in PostgreSQL using pgvector
 
 ### Retrieval
@@ -70,7 +72,10 @@ The project includes custom evaluation runners for:
 - retrieval-level evaluation
 - answer-level evaluation
 - query-type sliced metrics
+- document-aware retrieval evaluation
+- multi-accepted-section evaluation
 - persisted experiment outputs in JSON and CSV
+- retrieval failure inspection reports
 
 Current metrics include:
 
@@ -80,11 +85,65 @@ Current metrics include:
 - Citation presence accuracy
 - Answer-level pass rate
 
-### Failure Analysis
+## Current Best Results
 
-The project tracks observed failures and fixes in `docs/failure_analysis.md`.
+The current benchmark uses a 24-question Kubernetes documentation evaluation set across four query types:
 
-One documented example is a hybrid retrieval false positive on an out-of-domain query, caused by forced ranking in dense and BM25 retrieval. The system was improved by adding evidence sufficiency checks for hybrid answers.
+- conceptual
+- procedural
+- constraint
+- out_of_domain
+
+The best current retrieval strategy is hybrid retrieval with dense vector search and BM25 lexical search.
+
+### Retrieval-Level Metrics
+
+| Method | Hit@k | Top-1 Accuracy |
+| ------ | ----: | -------------: |
+| Dense  | 0.778 |          0.389 |
+| BM25   | 0.556 |          0.278 |
+| Hybrid | 0.722 |          0.500 |
+
+### Key Findings
+
+- Dense retrieval has the strongest overall Hit@k.
+- BM25 token normalization significantly reduced wrong-document failures.
+- Hybrid retrieval achieved the best Top-1 accuracy after BM25 normalization.
+- Simple heuristic reranking was tested but did not improve performance.
+- Multi-accepted-section evaluation made the benchmark more realistic by allowing multiple valid evidence sections.
+
+## Experiment Tracking
+
+Experiment notes are tracked in:
+
+```text
+docs/experiment_log.md
+```
+
+The experiment log records the hypothesis, implementation change, metrics, and conclusion for each retrieval optimization.
+
+Current documented experiments include:
+
+- metadata-enriched chunk representation
+- heuristic reranking
+- multi-accepted-section evaluation
+- field-weighted BM25
+- BM25 token normalization
+
+## Failure Analysis
+
+Failure analysis is tracked in:
+
+```text
+docs/failure_analysis.md
+```
+
+The project uses retrieval failure inspection reports to categorize errors such as:
+
+- wrong document retrieval
+- right document but wrong section
+- expected section found in top-k but not ranked first
+- out-of-domain false positives
 
 ## Architecture
 
@@ -122,13 +181,17 @@ eval-driven-rag-system/
 │   ├── eval/
 │   └── experiments/
 ├── docs/
+│   ├── evaluation_report.md
+│   ├── experiment_log.md
 │   └── failure_analysis.md
 ├── scripts/
 │   ├── create_tables.py
-│   ├── run_ingestion_demo.py
+│   ├── ingest_k8s_docs.py
+│   ├── run_answer_eval.py
 │   ├── run_embedding.py
+│   ├── run_ingestion_demo.py
 │   ├── run_retrieval_eval.py
-│   └── run_answer_eval.py
+│   └── inspect_retrieval_failures.py
 ├── src/
 │   ├── api/
 │   ├── core/
@@ -175,10 +238,10 @@ export $(grep -v '^#' .env | xargs)
 PYTHONPATH=. python scripts/create_tables.py
 ```
 
-### 5. Run demo ingestion
+### 5. Ingest Kubernetes documentation
 
 ```bash
-PYTHONPATH=. python scripts/run_ingestion_demo.py
+PYTHONPATH=. python scripts/ingest_k8s_docs.py
 ```
 
 ### 6. Generate embeddings
@@ -205,9 +268,9 @@ http://127.0.0.1:8000/docs
 curl -X POST http://127.0.0.1:8000/search \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "When should I use a DaemonSet?",
+    "query": "How do Kubernetes readiness probes work?",
     "method": "hybrid",
-    "top_k": 3
+    "top_k": 5
   }'
 ```
 
@@ -217,9 +280,9 @@ curl -X POST http://127.0.0.1:8000/search \
 curl -X POST http://127.0.0.1:8000/answer \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "When should I use a DaemonSet?",
+    "query": "How do Kubernetes readiness probes work?",
     "method": "hybrid",
-    "top_k": 3
+    "top_k": 5
   }'
 ```
 
@@ -237,7 +300,17 @@ Run answer-level evaluation:
 PYTHONPATH=. python scripts/run_answer_eval.py
 ```
 
-Evaluation outputs are saved to `data/experiments/`.
+Inspect retrieval failures:
+
+```bash
+PYTHONPATH=. python scripts/inspect_retrieval_failures.py
+```
+
+Evaluation outputs are saved to:
+
+```text
+data/experiments/
+```
 
 Generated experiment files are ignored by Git by default.
 
@@ -247,7 +320,7 @@ Completed:
 
 - PostgreSQL + pgvector setup
 - document and chunk schema
-- ingestion demo
+- real Kubernetes documentation ingestion
 - local embedding pipeline
 - dense retrieval
 - BM25 retrieval
@@ -258,14 +331,19 @@ Completed:
 - abstention logic
 - retrieval evaluation runner
 - answer evaluation runner
+- document-aware retrieval evaluation
+- multi-accepted-section evaluation
+- retrieval failure inspection reports
 - failure analysis documentation
+- experiment log documentation
+- BM25 token normalization
 
 Next planned improvements:
 
-- expand the evaluation dataset
-- add real Kubernetes documentation ingestion
-- improve BM25 tokenization and lexical evidence filtering
-- add query classification
+- improve section-level ranking for right-document-wrong-section failures
+- add stronger BM25 tokenization and stopword handling
+- add query classification for out-of-domain detection
 - add experiment comparison reports
 - integrate LLM-based grounded answer generation
 - add RAGAS-based evaluation
+- add tests for core retrieval and evaluation modules

@@ -1,3 +1,5 @@
+import re
+
 from rank_bm25 import BM25Okapi
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -7,9 +9,84 @@ from src.core.models import RetrievedChunk
 from src.storage.schema import ChunkORM, DocumentORM
 from src.retrieval.text_builder import build_chunk_search_text
 
+STOPWORDS = {
+    "a",
+    "an",
+    "the",
+    "is",
+    "are",
+    "was",
+    "were",
+    "to",
+    "of",
+    "for",
+    "and",
+    "or",
+    "in",
+    "on",
+    "with",
+    "by",
+    "how",
+    "do",
+    "i",
+    "should",
+    "when",
+    "what",
+    "why",
+    "does",
+    "did",
+    "can",
+    "could",
+    "would",
+    "you",
+    "your",
+}
+
+
+NORMALIZATION_MAP = {
+    "services": "service",
+    "secrets": "secret",
+    "configmaps": "configmap",
+    "deployments": "deployment",
+    "statefulsets": "statefulset",
+    "daemonsets": "daemonset",
+    "pods": "pod",
+    "nodes": "node",
+    "containers": "container",
+    "probes": "probe",
+    "rules": "rule",
+    "values": "value",
+    "variables": "variable",
+    "labels": "label",
+    "rollouts": "rollout",
+}
+
+
+def normalize_token(token: str) -> str:
+    if token in NORMALIZATION_MAP:
+        return NORMALIZATION_MAP[token]
+
+    # conservative plural normalization
+    if len(token) > 4 and token.endswith("s"):
+        return token[:-1]
+
+    return token
+
 
 def simple_tokenize(text: str) -> list[str]:
-    return text.lower().split()
+    raw_tokens = re.findall(r"[a-zA-Z0-9]+", text.lower())
+
+    tokens: list[str] = []
+    for token in raw_tokens:
+        if token in STOPWORDS:
+            continue
+
+        normalized = normalize_token(token)
+
+        if normalized and normalized not in STOPWORDS:
+            tokens.append(normalized)
+
+    return tokens
 
 
 class BM25Retriever:
