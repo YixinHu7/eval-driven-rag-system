@@ -56,6 +56,13 @@ class EvalConfig(BaseModel):
     eval_data_path: Path = Path("data/eval/questions.json")
     enable_ragas: bool = False
 
+class LLMConfig(BaseModel):
+    provider: str = Field(default_factory=lambda: os.getenv("LLM_PROVIDER", "openai"))
+    model_name: str = Field(default_factory=lambda: os.getenv("LLM_MODEL", "gpt-4o-mini"))
+    api_key: str = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
+    max_tokens: int = 512
+    temperature: float = 0.0
+
 class Settings(BaseModel):
     app: AppConfig = Field(default_factory=AppConfig)
     data: DataConfig = Field(default_factory=DataConfig)
@@ -65,6 +72,7 @@ class Settings(BaseModel):
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
     evaluation: EvalConfig = Field(default_factory=EvalConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
 
 def load_settings(config_path: Optional[str] = None) -> Settings:
     if config_path is None:
