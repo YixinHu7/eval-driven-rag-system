@@ -1,6 +1,6 @@
 from src.core.models import AnswerResponse, RetrievedChunk
 from src.generation.abstention import should_abstain
-from src.generation.citation_builder import build_citations
+from src.generation.citation_builder import build_used_citations
 from src.generation.llm_client import LLMClient
 from src.generation.prompt_builder import build_grounded_qa_prompt
 
@@ -24,14 +24,28 @@ class LLMAnswerGenerator:
                 citations=[],
                 query_type=None,
                 retrieval_strategy=retrieval_strategy,
-                confidence=self._estimate_confidence(chunks),
+                confidence=0.0,
                 abstained=True,
                 retrieved_chunks=chunks,
             )
 
-        citations = build_citations(chunks)
         prompt = build_grounded_qa_prompt(query=query, chunks=chunks)
         answer = self.llm_client.generate(prompt)
+        citations = build_used_citations(answer=answer, chunks=chunks)  
+        
+        if not citations:
+            return AnswerResponse(
+                answer=(
+                    "I found potentially relevant documentation, but I could not produce "
+                    "a sufficiently grounded answer with verifiable citations."
+                ),
+                citations=[],
+                query_type=None,
+                retrieval_strategy=retrieval_strategy,
+                confidence=0.0,
+                abstained=True,
+                retrieved_chunks=chunks,
+            )
 
         return AnswerResponse(
             answer=answer,
