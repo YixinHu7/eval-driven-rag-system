@@ -8,6 +8,7 @@ from src.core.models import AnswerResponse
 from src.generation.answer_generator import SimpleAnswerGenerator
 from src.retrieval.factory import get_retriever
 from src.storage.db import SessionLocal
+from src.generation.llm_answer_generator import LLMAnswerGenerator
 
 
 router = APIRouter(prefix="/answer", tags=["answer"])
@@ -17,12 +18,16 @@ class AnswerRequest(BaseModel):
     query: str = Field(..., min_length=1)
     method: Literal["dense", "bm25", "hybrid"] = settings.retrieval.default_method
     top_k: int = Field(default=settings.retrieval.top_k, ge=1, le=20)
-
+    generator: Literal["simple", "llm"] = "simple"
 
 @router.post("", response_model=AnswerResponse)
 def answer(request: AnswerRequest) -> AnswerResponse:
     retriever = get_retriever(request.method)
-    generator = SimpleAnswerGenerator()
+    
+    if request.generator == "llm":
+        generator = LLMAnswerGenerator()
+    else:
+        generator = SimpleAnswerGenerator()
 
     with SessionLocal() as session:
         chunks = retriever.retrieve(
