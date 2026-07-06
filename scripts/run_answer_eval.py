@@ -162,7 +162,10 @@ def evaluate_method(
         method=method,
         results=answer_eval_results,
     )
-    citation_summary = summarize_citation_results(citation_eval_results)
+    citation_summary = summarize_citation_results(
+        citation_eval_results=citation_eval_results,
+        answer_eval_results=answer_eval_results,
+    )
 
     return {
         "method": method,
@@ -175,13 +178,19 @@ def evaluate_method(
     }
 
 
-def summarize_citation_results(citation_eval_results: list[Any]) -> dict[str, Any]:
+def summarize_citation_results(
+    citation_eval_results: list[Any],
+    answer_eval_results: list[Any],
+) -> dict[str, Any]:
     if not citation_eval_results:
         return {
             "total": 0,
+            "answered_total": 0,
+            "abstained_total": 0,
             "citation_ids_valid_rate": 0.0,
             "citation_alignment_rate": 0.0,
             "average_citation_utilization": 0.0,
+            "average_answered_citation_utilization": 0.0,
         }
 
     total = len(citation_eval_results)
@@ -196,11 +205,35 @@ def summarize_citation_results(citation_eval_results: list[Any]) -> dict[str, An
         result.citation_utilization for result in citation_eval_results
     )
 
+    answered_pairs = [
+        (citation_result, answer_result)
+        for citation_result, answer_result in zip(
+            citation_eval_results,
+            answer_eval_results,
+            strict=True,
+        )
+        if not answer_result.abstained
+    ]
+
+    answered_total = len(answered_pairs)
+    abstained_total = total - answered_total
+
+    answered_utilization_sum = sum(
+        citation_result.citation_utilization for citation_result, _ in answered_pairs
+    )
+
+    average_answered_citation_utilization = (
+        answered_utilization_sum / answered_total if answered_total else 0.0
+    )
+
     return {
         "total": total,
+        "answered_total": answered_total,
+        "abstained_total": abstained_total,
         "citation_ids_valid_rate": valid_count / total,
         "citation_alignment_rate": aligned_count / total,
         "average_citation_utilization": utilization_sum / total,
+        "average_answered_citation_utilization": average_answered_citation_utilization,
     }
 
 
