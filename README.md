@@ -104,6 +104,26 @@ The best current retrieval strategy is hybrid retrieval with dense vector search
 | BM25   | 0.556 |          0.278 |
 | Hybrid | 0.722 |          0.500 |
 
+### Answer-Level Metrics
+
+The LLM-based answer generator was evaluated using the hybrid retriever on the full 24-question benchmark.
+
+| Metric                                | Score |
+| ------------------------------------- | ----: |
+| Abstention accuracy                   | 1.000 |
+| Citation presence accuracy            | 1.000 |
+| Pass rate                             | 1.000 |
+| Citation ID validity rate             | 1.000 |
+| Citation alignment rate               | 1.000 |
+| Average citation utilization          | 0.750 |
+| Average answered citation utilization | 1.000 |
+
+The benchmark contains 18 supported questions and 6 unsupported or out-of-domain questions. The lower overall citation utilization reflects correct abstention on unsupported questions. Among answered questions only, citation utilization was 1.000.
+
+The current system supports an evaluated end-to-end RAG workflow:
+
+`query → hybrid retrieval → abstention → grounded LLM answer → citation alignment → evaluation`
+
 ### Key Findings
 
 - Dense retrieval has the strongest overall Hit@k.
