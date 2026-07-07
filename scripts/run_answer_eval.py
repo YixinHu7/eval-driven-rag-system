@@ -18,6 +18,7 @@ from src.generation.answer_generator import SimpleAnswerGenerator
 from src.generation.llm_answer_generator import LLMAnswerGenerator
 from src.retrieval.factory import get_retriever
 from src.storage.db import SessionLocal
+from src.routing.query_classifier import classify_query
 
 RetrievalMethod = Literal["dense", "bm25", "hybrid"]
 GeneratorName = Literal["simple", "llm"]
@@ -120,11 +121,14 @@ def evaluate_method(
                 query=question.query,
                 top_k=settings.retrieval.top_k,
             )
+        
+        query_classification = classify_query(question.query)
 
         response: AnswerResponse = generator.generate(
             query=question.query,
             chunks=chunks,
             retrieval_strategy=method,
+            query_type=query_classification.query_type,
         )
 
         answer_eval = evaluate_answer_result(

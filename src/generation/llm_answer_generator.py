@@ -14,6 +14,7 @@ class LLMAnswerGenerator:
         query: str,
         chunks: list[RetrievedChunk],
         retrieval_strategy: str,
+        query_type: str | None = None,
     ) -> AnswerResponse:
         if should_abstain(query, chunks):
             return AnswerResponse(
@@ -22,7 +23,7 @@ class LLMAnswerGenerator:
                     "with confidence."
                 ),
                 citations=[],
-                query_type=None,
+                query_type=query_type,
                 retrieval_strategy=retrieval_strategy,
                 confidence=0.0,
                 abstained=True,
@@ -40,7 +41,7 @@ class LLMAnswerGenerator:
                     "a sufficiently grounded answer with verifiable citations."
                 ),
                 citations=[],
-                query_type=None,
+                query_type=query_type,
                 retrieval_strategy=retrieval_strategy,
                 confidence=0.0,
                 abstained=True,
@@ -50,7 +51,7 @@ class LLMAnswerGenerator:
         return AnswerResponse(
             answer=answer,
             citations=citations,
-            query_type=None,
+            query_type=query_type,
             retrieval_strategy=retrieval_strategy,
             confidence=self._estimate_confidence(chunks),
             abstained=False,
