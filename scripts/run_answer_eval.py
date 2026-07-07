@@ -1,166 +1,414 @@
+import argparse
 import csv
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Literal
 
+from src.core.models import AnswerResponse
 from src.core.config import settings
 from src.evaluation.answer_metrics import (
-    AnswerEvalResult,
-    AnswerEvalSliceSummary,
-    AnswerEvalSummary,
     evaluate_answer_result,
     summarize_answer_by_query_type,
     summarize_answer_results,
 )
-from src.evaluation.dataset import load_eval_questions
+from src.evaluation.citation_metrics import evaluate_citations
+from src.evaluation.dataset import EvalQuestion, load_eval_questions
 from src.generation.answer_generator import SimpleAnswerGenerator
+from src.generation.llm_answer_generator import LLMAnswerGenerator
 from src.retrieval.factory import get_retriever
 from src.storage.db import SessionLocal
 
+RetrievalMethod = Literal["dense", "bm25", "hybrid"]
+GeneratorName = Literal["simple", "llm"]
 
-def print_method_results(
-    method: str,
-    summary: AnswerEvalSummary,
-    slice_summaries: list[AnswerEvalSliceSummary],
-    results: list[AnswerEvalResult],
-) -> None:
-    print("=" * 100)
-    print(f"Method: {method}")
-    print("=" * 100)
 
-    print(f"Total questions: {summary.total_questions}")
-    print(f"Abstention accuracy: {summary.abstention_accuracy:.3f}")
-    print(f"Citation presence accuracy: {summary.citation_presence_accuracy:.3f}")
-    print(f"Pass rate: {summary.pass_rate:.3f}")
+def serialize_model(model: Any) -> dict[str, Any]:
+    if hasattr(model, "model_dump"):
+        return model.model_dump()
 
-    print("\nBy query type:")
-    for item in slice_summaries:
-        print(
-            f"- {item.query_type}: "
-            f"questions={item.total_questions}, "
-            f"abstention={item.abstention_accuracy:.3f}, "
-            f"citation={item.citation_presence_accuracy:.3f}, "
-            f"pass={item.pass_rate:.3f}"
+    if hasattr(model, "dict"):
+        return model.dict()
+
+    raise TypeError(f"Object is not serializable as a Pydantic model: {type(model)}")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run answer-level evaluation for simple or LLM generators."
+    )
+
+    parser.add_argument(
+        "--generator",
+        choices=["simple", "llm"],
+        default="simple",
+        help="Answer generator to evaluate.",
+    )
+
+    parser.add_argument(
+        "--method",
+        choices=["dense", "bm25", "hybrid", "all"],
+        default="all",
+        help="Retrieval method to evaluate.",
+    )
+
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Optional limit on number of evaluation questions.",
+    )
+
+    parser.add_argument(
+        "--eval-path",
+        type=str,
+        default=str(settings.evaluation.eval_data_path),
+        help="Path to evaluation questions JSON file.",
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=str(settings.data.experiments_dir),
+        help="Directory where evaluation reports are written.",
+    )
+
+    return parser.parse_args()
+
+
+def resolve_methods(method_arg: str) -> list[RetrievalMethod]:
+    if method_arg == "all":
+        return ["dense", "bm25", "hybrid"]
+
+    return [method_arg]  # type: ignore[list-item]
+
+
+def build_generator(
+    generator_name: GeneratorName,
+) -> SimpleAnswerGenerator | LLMAnswerGenerator:
+    if generator_name == "llm":
+        return LLMAnswerGenerator()
+
+    return SimpleAnswerGenerator()
+
+
+def get_questions(eval_path: str, limit: int | None) -> list[EvalQuestion]:
+    questions = load_eval_questions(Path(eval_path))
+
+    if limit is not None:
+        return questions[:limit]
+
+    return questions
+
+
+def evaluate_method(
+    method: RetrievalMethod,
+    generator_name: GeneratorName,
+    questions: list[EvalQuestion],
+) -> dict[str, Any]:
+    retriever = get_retriever(method)
+    generator = build_generator(generator_name)
+
+    answer_eval_results = []
+    citation_eval_results = []
+    records: list[dict[str, Any]] = []
+
+    for question in questions:
+        with SessionLocal() as session:
+            chunks = retriever.retrieve(
+                session=session,
+                query=question.query,
+                top_k=settings.retrieval.top_k,
+            )
+
+        response: AnswerResponse = generator.generate(
+            query=question.query,
+            chunks=chunks,
+            retrieval_strategy=method,
         )
 
-    print("\nPer-question results:")
-    for result in results:
-        print("-" * 100)
-        print(f"ID: {result.question_id}")
-        print(f"Type: {result.query_type}")
-        print(f"Supported: {result.supported}")
-        print(f"Query: {result.query}")
-        print(f"Abstained: {result.abstained}")
-        print(f"Expected abstain: {result.expected_abstain}")
-        print(f"Abstention correct: {result.abstention_correct}")
-        print(f"Citation count: {result.citation_count}")
-        print(f"Citation presence correct: {result.citation_presence_correct}")
-        print(f"Passed: {result.passed}")
+        answer_eval = evaluate_answer_result(
+            question=question,
+            method=method,
+            response=response,
+        )
+        citation_eval = evaluate_citations(response)
+
+        answer_eval_results.append(answer_eval)
+        citation_eval_results.append(citation_eval)
+
+        records.append(
+            {
+                "question": serialize_model(question),
+                "response": serialize_model(response),
+                "answer_eval": serialize_model(answer_eval),
+                "citation_eval": serialize_model(citation_eval),
+            }
+        )
+
+        status = "PASS" if getattr(answer_eval, "passed", False) else "FAIL"
+        print(
+            f"[{method} | {generator_name}] "
+            f"{question.question_id}: {status} "
+            f"abstained={response.abstained} "
+            f"citations={len(response.citations)}"
+        )
+
+    answer_summary = summarize_answer_results(
+        method=method,
+        results=answer_eval_results,
+    )
+    slice_summary = summarize_answer_by_query_type(
+        method=method,
+        results=answer_eval_results,
+    )
+    citation_summary = summarize_citation_results(
+        citation_eval_results=citation_eval_results,
+        answer_eval_results=answer_eval_results,
+    )
+
+    return {
+        "method": method,
+        "generator": generator_name,
+        "supported_questions": sum(1 for question in questions if question.supported),
+        "answer_summary": serialize_model(answer_summary),
+        "slice_summary": [serialize_model(item) for item in slice_summary],
+        "citation_summary": citation_summary,
+        "records": records,
+    }
+
+
+def summarize_citation_results(
+    citation_eval_results: list[Any],
+    answer_eval_results: list[Any],
+) -> dict[str, Any]:
+    if not citation_eval_results:
+        return {
+            "total": 0,
+            "answered_total": 0,
+            "abstained_total": 0,
+            "citation_ids_valid_rate": 0.0,
+            "citation_alignment_rate": 0.0,
+            "average_citation_utilization": 0.0,
+            "average_answered_citation_utilization": 0.0,
+        }
+
+    total = len(citation_eval_results)
+
+    valid_count = sum(
+        1 for result in citation_eval_results if result.citation_ids_valid
+    )
+    aligned_count = sum(
+        1 for result in citation_eval_results if result.citation_alignment_correct
+    )
+    utilization_sum = sum(
+        result.citation_utilization for result in citation_eval_results
+    )
+
+    answered_pairs = [
+        (citation_result, answer_result)
+        for citation_result, answer_result in zip(
+            citation_eval_results,
+            answer_eval_results,
+            strict=True,
+        )
+        if not answer_result.abstained
+    ]
+
+    answered_total = len(answered_pairs)
+    abstained_total = total - answered_total
+
+    answered_utilization_sum = sum(
+        citation_result.citation_utilization for citation_result, _ in answered_pairs
+    )
+
+    average_answered_citation_utilization = (
+        answered_utilization_sum / answered_total if answered_total else 0.0
+    )
+
+    return {
+        "total": total,
+        "answered_total": answered_total,
+        "abstained_total": abstained_total,
+        "citation_ids_valid_rate": valid_count / total,
+        "citation_alignment_rate": aligned_count / total,
+        "average_citation_utilization": utilization_sum / total,
+        "average_answered_citation_utilization": average_answered_citation_utilization,
+    }
 
 
 def write_json_report(
-    output_path: Path,
-    summaries: list[AnswerEvalSummary],
-    slice_summaries: list[AnswerEvalSliceSummary],
-    results: list[AnswerEvalResult],
-) -> None:
-    payload = {
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "config": {
-            "top_k": settings.retrieval.top_k,
-            "candidate_k": settings.retrieval.candidate_k,
-            "embedding_model": settings.embedding.model_name,
-            "embedding_dimensions": settings.embedding.embedding_dimensions,
-        },
-        "summaries": [summary.model_dump() for summary in summaries],
-        "slice_summaries": [summary.model_dump() for summary in slice_summaries],
-        "results": [result.model_dump() for result in results],
-    }
+    report: dict[str, Any],
+    output_dir: Path,
+    timestamp: str,
+) -> Path:
+    output_path = output_dir / f"answer_eval_{timestamp}.json"
 
-    output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    with output_path.open("w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+
+    return output_path
 
 
 def write_csv_report(
-    output_path: Path,
-    results: list[AnswerEvalResult],
-) -> None:
-    fieldnames = [
-        "question_id",
-        "method",
-        "query_type",
-        "supported",
-        "query",
-        "abstained",
-        "expected_abstain",
-        "abstention_correct",
-        "citation_count",
-        "citation_presence_correct",
-        "passed",
-    ]
+    report: dict[str, Any],
+    output_dir: Path,
+    timestamp: str,
+) -> Path:
+    output_path = output_dir / f"answer_eval_{timestamp}.csv"
+
+    rows: list[dict[str, Any]] = []
+
+    for method_result in report["method_results"]:
+        method = method_result["method"]
+        generator = method_result["generator"]
+
+        for record in method_result["records"]:
+            question = record["question"]
+            response = record["response"]
+            answer_eval = record["answer_eval"]
+            citation_eval = record["citation_eval"]
+
+            rows.append(
+                {
+                    "method": method,
+                    "generator": generator,
+                    "question_id": question["question_id"],
+                    "query_type": question["query_type"],
+                    "supported": question["supported"],
+                    "abstained": response["abstained"],
+                    "confidence": response["confidence"],
+                    "answer": response["answer"],
+                    "num_returned_citations": len(response["citations"]),
+                    "abstention_correct": answer_eval["abstention_correct"],
+                    "citation_presence_correct": answer_eval[
+                        "citation_presence_correct"
+                    ],
+                    "passed": answer_eval["passed"],
+                    "referenced_citation_ids": ";".join(
+                        str(citation_id)
+                        for citation_id in citation_eval["referenced_citation_ids"]
+                    ),
+                    "returned_citation_ids": ";".join(
+                        str(citation_id)
+                        for citation_id in citation_eval["returned_citation_ids"]
+                    ),
+                    "invalid_citation_ids": ";".join(
+                        str(citation_id)
+                        for citation_id in citation_eval["invalid_citation_ids"]
+                    ),
+                    "missing_returned_citation_ids": ";".join(
+                        str(citation_id)
+                        for citation_id in citation_eval[
+                            "missing_returned_citation_ids"
+                        ]
+                    ),
+                    "unreferenced_returned_citation_ids": ";".join(
+                        str(citation_id)
+                        for citation_id in citation_eval[
+                            "unreferenced_returned_citation_ids"
+                        ]
+                    ),
+                    "citation_ids_valid": citation_eval["citation_ids_valid"],
+                    "citation_alignment_correct": citation_eval[
+                        "citation_alignment_correct"
+                    ],
+                    "citation_utilization": citation_eval["citation_utilization"],
+                }
+            )
+
+    if not rows:
+        return output_path
 
     with output_path.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(
+            f,
+            fieldnames=list(rows[0].keys()),
+        )
         writer.writeheader()
+        writer.writerows(rows)
 
-        for result in results:
-            writer.writerow(result.model_dump())
+    return output_path
+
+
+def print_summary(report: dict[str, Any]) -> None:
+    print("\nAnswer Evaluation Summary")
+    print("=" * 80)
+
+    for method_result in report["method_results"]:
+        method = method_result["method"]
+        generator = method_result["generator"]
+        answer_summary = method_result["answer_summary"]
+        citation_summary = method_result["citation_summary"]
+
+        print(f"\nMethod: {method}")
+        print(f"Generator: {generator}")
+        print(f"Total questions: {answer_summary['total_questions']}")
+        print(f"Supported questions: {method_result['supported_questions']}")
+        print(f"Abstention accuracy: {answer_summary['abstention_accuracy']:.3f}")
+        print(
+            "Citation presence accuracy: "
+            f"{answer_summary['citation_presence_accuracy']:.3f}"
+        )
+        print(f"Pass rate: {answer_summary['pass_rate']:.3f}")
+        print(
+            "Citation ID validity rate: "
+            f"{citation_summary['citation_ids_valid_rate']:.3f}"
+        )
+        print(
+            "Citation alignment rate: "
+            f"{citation_summary['citation_alignment_rate']:.3f}"
+        )
+        print(
+            "Average citation utilization: "
+            f"{citation_summary['average_citation_utilization']:.3f}"
+        )
 
 
 def main() -> None:
-    questions = load_eval_questions(settings.evaluation.eval_data_path)
-    methods = ["dense", "bm25", "hybrid"]
+    args = parse_args()
 
-    generator = SimpleAnswerGenerator()
+    generator_name: GeneratorName = args.generator
+    methods = resolve_methods(args.method)
+    questions = get_questions(args.eval_path, args.limit)
 
-    all_results: list[AnswerEvalResult] = []
-    summaries: list[AnswerEvalSummary] = []
-    all_slice_summaries: list[AnswerEvalSliceSummary] = []
-
-    with SessionLocal() as session:
-        for method in methods:
-            retriever = get_retriever(method)
-            method_results: list[AnswerEvalResult] = []
-
-            for question in questions:
-                chunks = retriever.retrieve(
-                    session=session,
-                    query=question.query,
-                    top_k=settings.retrieval.top_k,
-                )
-
-                response = generator.generate(
-                    query=question.query,
-                    chunks=chunks,
-                    retrieval_strategy=method,
-                )
-
-                result = evaluate_answer_result(
-                    question=question,
-                    method=method,
-                    response=response,
-                )
-                method_results.append(result)
-
-            summary = summarize_answer_results(method, method_results)
-            slice_summaries = summarize_answer_by_query_type(method, method_results)
-
-            print_method_results(method, summary, slice_summaries, method_results)
-
-            summaries.append(summary)
-            all_slice_summaries.extend(slice_summaries)
-            all_results.extend(method_results)
-
-    output_dir = settings.data.experiments_dir
+    output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    json_path = output_dir / f"answer_eval_{timestamp}.json"
-    csv_path = output_dir / f"answer_eval_{timestamp}.csv"
 
-    write_json_report(json_path, summaries, all_slice_summaries, all_results)
-    write_csv_report(csv_path, all_results)
+    method_results = [
+        evaluate_method(
+            method=method,
+            generator_name=generator_name,
+            questions=questions,
+        )
+        for method in methods
+    ]
 
-    print("\nSaved answer evaluation reports:")
+    report = {
+        "timestamp": timestamp,
+        "generator": generator_name,
+        "methods": methods,
+        "limit": args.limit,
+        "eval_path": args.eval_path,
+        "method_results": method_results,
+    }
+
+    json_path = write_json_report(
+        report=report,
+        output_dir=output_dir,
+        timestamp=timestamp,
+    )
+    csv_path = write_csv_report(
+        report=report,
+        output_dir=output_dir,
+        timestamp=timestamp,
+    )
+
+    print_summary(report)
+
+    print("\nWrote reports:")
     print(f"- {json_path}")
     print(f"- {csv_path}")
 
