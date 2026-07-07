@@ -140,3 +140,57 @@ Hybrid retrieval also improved because its BM25 component became cleaner:
 ### Conclusion
 
 BM25 token normalization improved lexical document routing. Hybrid retrieval benefited from the cleaner BM25 signal. Weighted hybrid fusion was tested separately and did not add measurable improvement beyond BM25 normalization.
+
+## Experiment 6: LLM Grounded Answer Generation
+
+### Hypothesis
+
+A grounded LLM answer generator can improve the user-facing answer quality while preserving evaluation reliability if it is constrained to retrieved context and citation alignment is enforced in code.
+
+### Change
+
+Added an LLM-based answer generator with the following behavior:
+
+* uses retrieved chunks as the only answer context
+* requires inline citation markers such as `[1]`
+* abstains before generation when retrieved evidence is insufficient
+* filters returned citations to include only citations explicitly referenced in the answer
+* fails safely if the generated answer contains no usable citations
+
+The answer evaluation pipeline was updated to support configurable generators:
+
+* `simple`
+* `llm`
+
+Citation evaluation was also added to measure:
+
+* citation ID validity
+* citation alignment
+* citation utilization
+* answered-only citation utilization
+
+### Result
+
+The LLM generator was evaluated on the full 24-question Kubernetes documentation benchmark using hybrid retrieval.
+
+| Metric                                | Result |
+| ------------------------------------- | -----: |
+| Total questions                       |     24 |
+| Supported questions                   |     18 |
+| Abstention accuracy                   |  1.000 |
+| Citation presence accuracy            |  1.000 |
+| Pass rate                             |  1.000 |
+| Citation ID validity rate             |  1.000 |
+| Citation alignment rate               |  1.000 |
+| Average citation utilization          |  0.750 |
+| Average answered citation utilization |  1.000 |
+
+### Conclusion
+
+The LLM generator successfully completed the end-to-end grounded answer workflow. It answered supported questions with aligned citations and abstained on unsupported questions.
+
+The `average_citation_utilization` score is 0.750 because unsupported questions correctly returned no citations. For answered questions only, citation utilization was 1.000.
+
+This result validates the project’s core RAG loop:
+
+`retrieve → generate → cite → abstain → evaluate`
