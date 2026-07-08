@@ -9,6 +9,11 @@ from src.generation.answer_generator import SimpleAnswerGenerator
 from src.retrieval.factory import get_retriever
 from src.storage.db import SessionLocal
 from src.generation.llm_answer_generator import LLMAnswerGenerator
+from src.routing.query_classifier import classify_query
+from src.routing.policy import (
+    build_routing_abstention_response,
+    should_short_circuit_answer,
+)
 
 
 router = APIRouter(prefix="/answer", tags=["answer"])
@@ -22,8 +27,16 @@ class AnswerRequest(BaseModel):
 
 @router.post("", response_model=AnswerResponse)
 def answer(request: AnswerRequest) -> AnswerResponse:
-    retriever = get_retriever(request.method)
+    query_classification = classify_query(request.query)
     
+    if should_short_circuit_answer(query_classification):
+        return build_routing_abstention_response(
+            classification=query_classification,
+            retrieval_strategy=request.method,
+        )
+
+    retriever = get_retriever(request.method)
+
     if request.generator == "llm":
         generator = LLMAnswerGenerator()
     else:
@@ -40,4 +53,5 @@ def answer(request: AnswerRequest) -> AnswerResponse:
         query=request.query,
         chunks=chunks,
         retrieval_strategy=request.method,
+        query_type=query_classification.query_type,
     )

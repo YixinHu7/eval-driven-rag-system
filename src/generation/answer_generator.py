@@ -9,6 +9,7 @@ class SimpleAnswerGenerator:
         query: str,
         chunks: list[RetrievedChunk],
         retrieval_strategy: str,
+        query_type: str | None = None,
     ) -> AnswerResponse:
         if should_abstain(query, chunks):
             return AnswerResponse(
@@ -17,7 +18,7 @@ class SimpleAnswerGenerator:
                     "with confidence."
                 ),
                 citations=[],
-                query_type=None,
+                query_type=query_type,
                 retrieval_strategy=retrieval_strategy,
                 confidence=self._estimate_confidence(chunks),
                 abstained=True,
@@ -43,7 +44,7 @@ class SimpleAnswerGenerator:
         return AnswerResponse(
             answer=answer,
             citations=citations,
-            query_type=None,
+            query_type=query_type,
             retrieval_strategy=retrieval_strategy,
             confidence=confidence,
             abstained=False,

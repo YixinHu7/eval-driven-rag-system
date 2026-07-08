@@ -18,6 +18,12 @@ from src.generation.answer_generator import SimpleAnswerGenerator
 from src.generation.llm_answer_generator import LLMAnswerGenerator
 from src.retrieval.factory import get_retriever
 from src.storage.db import SessionLocal
+from src.routing.query_classifier import classify_query
+from src.routing.policy import (
+    build_routing_abstention_response,
+    should_short_circuit_answer,
+)
+
 
 RetrievalMethod = Literal["dense", "bm25", "hybrid"]
 GeneratorName = Literal["simple", "llm"]
@@ -114,18 +120,27 @@ def evaluate_method(
     records: list[dict[str, Any]] = []
 
     for question in questions:
-        with SessionLocal() as session:
-            chunks = retriever.retrieve(
-                session=session,
-                query=question.query,
-                top_k=settings.retrieval.top_k,
+        query_classification = classify_query(question.query)
+        
+        if should_short_circuit_answer(query_classification):
+            response = build_routing_abstention_response(
+                classification=query_classification,
+                retrieval_strategy=method,
             )
-
-        response: AnswerResponse = generator.generate(
-            query=question.query,
-            chunks=chunks,
-            retrieval_strategy=method,
-        )
+        else:    
+            with SessionLocal() as session:
+                chunks = retriever.retrieve(
+                    session=session,
+                    query=question.query,
+                    top_k=settings.retrieval.top_k,
+                )
+            
+            response: AnswerResponse = generator.generate(
+                query=question.query,
+                chunks=chunks,
+                retrieval_strategy=method,
+                query_type=query_classification.query_type,
+            )
 
         answer_eval = evaluate_answer_result(
             question=question,
@@ -140,6 +155,7 @@ def evaluate_method(
         records.append(
             {
                 "question": serialize_model(question),
+                "query_classification": serialize_model(query_classification),
                 "response": serialize_model(response),
                 "answer_eval": serialize_model(answer_eval),
                 "citation_eval": serialize_model(citation_eval),
@@ -265,6 +281,7 @@ def write_csv_report(
 
         for record in method_result["records"]:
             question = record["question"]
+            query_classification = record["query_classification"]
             response = record["response"]
             answer_eval = record["answer_eval"]
             citation_eval = record["citation_eval"]
@@ -275,6 +292,9 @@ def write_csv_report(
                     "generator": generator,
                     "question_id": question["question_id"],
                     "query_type": question["query_type"],
+                    "classified_query_type": query_classification["query_type"],
+                    "classification_confidence": query_classification["confidence"],
+                    "matched_terms": ";".join(query_classification["matched_terms"]),
                     "supported": question["supported"],
                     "abstained": response["abstained"],
                     "confidence": response["confidence"],
