@@ -3,6 +3,7 @@ from src.generation.abstention import should_abstain
 from src.generation.citation_builder import build_used_citations
 from src.generation.llm_client import LLMClient
 from src.generation.prompt_builder import build_grounded_qa_prompt
+from src.generation.context_selector import select_context_chunks
 
 
 class LLMAnswerGenerator:
@@ -30,10 +31,12 @@ class LLMAnswerGenerator:
                 retrieved_chunks=chunks,
             )
 
-        prompt = build_grounded_qa_prompt(query=query, chunks=chunks)
+        context_chunks = select_context_chunks(chunks=chunks, max_chunks=5)
+
+        prompt = build_grounded_qa_prompt(query=query, chunks=context_chunks)
         answer = self.llm_client.generate(prompt)
-        citations = build_used_citations(answer=answer, chunks=chunks)  
-        
+        citations = build_used_citations(answer=answer, chunks=context_chunks)
+
         if not citations:
             return AnswerResponse(
                 answer=(
@@ -45,7 +48,7 @@ class LLMAnswerGenerator:
                 retrieval_strategy=retrieval_strategy,
                 confidence=0.0,
                 abstained=True,
-                retrieved_chunks=chunks,
+                retrieved_chunks=context_chunks,
             )
 
         return AnswerResponse(
@@ -55,7 +58,7 @@ class LLMAnswerGenerator:
             retrieval_strategy=retrieval_strategy,
             confidence=self._estimate_confidence(chunks),
             abstained=False,
-            retrieved_chunks=chunks,
+            retrieved_chunks=context_chunks,
         )
 
     def _estimate_confidence(self, chunks: list[RetrievedChunk]) -> float:
