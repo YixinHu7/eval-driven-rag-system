@@ -47,6 +47,12 @@ class RetrievalConfig(BaseModel):
     enable_reranker: bool = False
     similarity_metric: str = "cosine"
 
+class RerankerConfig(BaseModel):
+    model_name: str = "BAAI/bge-reranker-base"
+    device: str = "cpu"
+    candidate_k: int = 20
+    top_k: int = 5
+
 class GenerationConfig(BaseModel):
     max_context_chunks: int = 5
     max_tokens: int = 512
@@ -70,6 +76,7 @@ class Settings(BaseModel):
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
     chunking: ChunkingConfig = Field(default_factory=ChunkingConfig)
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
+    reranker: RerankerConfig = Field(default_factory=RerankerConfig)
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
     evaluation: EvalConfig = Field(default_factory=EvalConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
