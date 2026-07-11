@@ -24,8 +24,9 @@ from src.routing.policy import (
     should_short_circuit_answer,
 )
 
-
-RetrievalMethod = Literal["dense", "bm25", "hybrid"]
+RetrievalMethod = Literal[
+    "dense", "bm25", "hybrid", "dense_reranked", "hybrid_reranked"
+]
 GeneratorName = Literal["simple", "llm"]
 
 
@@ -53,7 +54,7 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--method",
-        choices=["dense", "bm25", "hybrid", "all"],
+        choices=["dense", "bm25", "hybrid", "dense_reranked", "hybrid_reranked", "all"],
         default="all",
         help="Retrieval method to evaluate.",
     )
@@ -121,20 +122,20 @@ def evaluate_method(
 
     for question in questions:
         query_classification = classify_query(question.query)
-        
+
         if should_short_circuit_answer(query_classification):
             response = build_routing_abstention_response(
                 classification=query_classification,
                 retrieval_strategy=method,
             )
-        else:    
+        else:
             with SessionLocal() as session:
                 chunks = retriever.retrieve(
                     session=session,
                     query=question.query,
                     top_k=settings.retrieval.top_k,
                 )
-            
+
             response: AnswerResponse = generator.generate(
                 query=question.query,
                 chunks=chunks,
