@@ -149,6 +149,12 @@ Current documented experiments include:
 - multi-accepted-section evaluation
 - field-weighted BM25
 - BM25 token normalization
+  
+A compact experiment comparison summary is available in:
+
+```text
+docs/experiment_summary.md
+```
 
 ## Failure Analysis
 
