@@ -7,6 +7,7 @@ from src.core.models import RetrievedChunk
 from src.retrieval.bm25 import BM25Retriever
 from src.retrieval.dense import DenseRetriever
 from src.retrieval.hybrid import HybridRetriever
+from src.retrieval.cross_encoder_reranker import CrossEncoderRerankedRetriever
 
 
 class Retriever(Protocol):
@@ -30,8 +31,18 @@ def get_retriever(method: str | None = None) -> Retriever:
 
     if selected_method in {"hybrid", "hybrid_rrf"}:
         return HybridRetriever()
+    
+    if selected_method == "dense_reranked":
+        return CrossEncoderRerankedRetriever(
+            base_retriever=DenseRetriever(),
+        )
+
+    if selected_method == "hybrid_reranked":
+        return CrossEncoderRerankedRetriever(
+            base_retriever=HybridRetriever(),
+        )
 
     raise ValueError(
         f"Unsupported retrieval method: {selected_method}. "
-        "Expected one of: dense, bm25, hybrid."
+        "Expected one of: dense, bm25, hybrid, dense_reranked, hybrid_reranked."
     )

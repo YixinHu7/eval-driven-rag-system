@@ -1,7 +1,9 @@
+import argparse
 import csv
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from src.core.config import settings
 from src.evaluation.dataset import load_eval_questions
@@ -15,6 +17,51 @@ from src.evaluation.retrieval_metrics import (
 )
 from src.retrieval.factory import get_retriever
 from src.storage.db import SessionLocal
+
+RetrievalMethod = Literal[
+    "dense",
+    "bm25",
+    "hybrid",
+    "dense_reranked",
+    "hybrid_reranked",
+]
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run retrieval-level evaluation.")
+
+    parser.add_argument(
+        "--method",
+        choices=[
+            "dense",
+            "bm25",
+            "hybrid",
+            "dense_reranked",
+            "hybrid_reranked",
+            "all",
+        ],
+        default="all",
+        help=(
+            "Retrieval method to evaluate. "
+            "Use 'all' for dense, bm25, and hybrid only."
+        ),
+    )
+
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Optional limit on number of evaluation questions.",
+    )
+
+    return parser.parse_args()
+
+
+def resolve_methods(method_arg: str) -> list[RetrievalMethod]:
+    if method_arg == "all":
+        return ["dense", "bm25", "hybrid"]
+
+    return [method_arg]  # type: ignore[list-item]
 
 
 def print_method_results(
@@ -31,7 +78,7 @@ def print_method_results(
     print(f"Supported questions: {summary.supported_questions}")
     print(f"Hit@k: {summary.hit_at_k:.3f}")
     print(f"Top-1 accuracy: {summary.top_1_accuracy:.3f}")
-    
+
     print("\nBy query type:")
     for slice_summary in slice_summaries:
         print(
@@ -71,6 +118,7 @@ def print_method_results(
 
 def write_json_report(
     output_path: Path,
+    methods: list[RetrievalMethod],
     summaries: list[RetrievalEvalSummary],
     slice_summaries: list[RetrievalEvalSliceSummary],
     results: list[RetrievalEvalResult],
@@ -78,10 +126,13 @@ def write_json_report(
     payload = {
         "created_at": datetime.now(timezone.utc).isoformat(),
         "config": {
+            "methods": methods,
             "top_k": settings.retrieval.top_k,
             "candidate_k": settings.retrieval.candidate_k,
             "embedding_model": settings.embedding.model_name,
             "embedding_dimensions": settings.embedding.embedding_dimensions,
+            "reranker_model": getattr(settings.reranker, "model_name", None),
+            "reranker_candidate_k": getattr(settings.reranker, "candidate_k", None),
         },
         "summaries": [summary.model_dump() for summary in summaries],
         "slice_summaries": [summary.model_dump() for summary in slice_summaries],
@@ -139,8 +190,14 @@ def write_csv_report(
 
 
 def main() -> None:
+    args = parse_args()
+
     questions = load_eval_questions(settings.evaluation.eval_data_path)
-    methods = ["dense", "bm25", "hybrid"]
+
+    if args.limit is not None:
+        questions = questions[: args.limit]
+
+    methods = resolve_methods(args.method)
 
     all_results: list[RetrievalEvalResult] = []
     summaries: list[RetrievalEvalSummary] = []
@@ -169,13 +226,18 @@ def main() -> None:
                 method=method,
                 results=method_results,
             )
-            
+
             slice_summaries = summarize_by_query_type(
                 method=method,
                 results=method_results,
             )
 
-            print_method_results(method, method_results, summary, slice_summaries)
+            print_method_results(
+                method=method,
+                results=method_results,
+                summary=summary,
+                slice_summaries=slice_summaries,
+            )
 
             summaries.append(summary)
             all_slice_summaries.extend(slice_summaries)
@@ -185,10 +247,17 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    json_path = output_dir / f"retrieval_eval_{timestamp}.json"
-    csv_path = output_dir / f"retrieval_eval_{timestamp}.csv"
+    method_label = args.method
+    json_path = output_dir / f"retrieval_eval_{method_label}_{timestamp}.json"
+    csv_path = output_dir / f"retrieval_eval_{method_label}_{timestamp}.csv"
 
-    write_json_report(json_path, summaries, all_slice_summaries, all_results)
+    write_json_report(
+        output_path=json_path,
+        methods=methods,
+        summaries=summaries,
+        slice_summaries=all_slice_summaries,
+        results=all_results,
+    )
     write_csv_report(csv_path, all_results)
 
     print("\nSaved evaluation reports:")

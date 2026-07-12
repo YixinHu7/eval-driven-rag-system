@@ -194,3 +194,44 @@ The `average_citation_utilization` score is 0.750 because unsupported questions 
 This result validates the project’s core RAG loop:
 
 `retrieve → generate → cite → abstain → evaluate`
+
+## Experiment 7: Cross-Encoder Reranking
+
+### Hypothesis
+
+A cross-encoder reranker may improve section-level ranking by scoring query-chunk pairs more precisely than dense retrieval or BM25 alone.
+
+### Change
+
+Added optional second-stage reranked retrievers:
+
+* `dense_reranked`
+* `hybrid_reranked`
+
+The reranker first retrieves candidate chunks using a base retriever, then reorders those candidates using a cross-encoder model.
+
+### Retrieval-Level Result
+
+The reranked hybrid retriever improved Hit@k but did not improve Top-1 accuracy.
+
+| Method          | Hit@k | Top-1 Accuracy |
+| --------------- | ----: | -------------: |
+| Hybrid          | 0.722 |          0.500 |
+| Hybrid Reranked | 0.889 |          0.444 |
+
+### Answer-Level Result
+
+Both hybrid and hybrid-reranked retrieval achieved perfect answer-level performance with the LLM answer generator on the current benchmark.
+
+| Method          | Generator | Abstention Accuracy | Citation Presence Accuracy | Pass Rate | Citation ID Validity | Citation Alignment |
+| --------------- | --------- | ------------------: | -------------------------: | --------: | -------------------: | -----------------: |
+| Hybrid          | LLM       |               1.000 |                      1.000 |     1.000 |                1.000 |              1.000 |
+| Hybrid Reranked | LLM       |               1.000 |                      1.000 |     1.000 |                1.000 |              1.000 |
+
+### Conclusion
+
+Cross-encoder reranking increased the likelihood that the correct evidence section appears somewhere in the top-k results, but it did not improve Top-1 ranking on the current benchmark.
+
+Because answer-level performance was already perfect with the default hybrid retriever, the reranked retriever did not provide measurable end-to-end improvement in this evaluation.
+
+The reranker is kept as an optional experimental retriever for high-recall retrieval experiments, but hybrid retrieval remains the default strategy.
