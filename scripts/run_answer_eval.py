@@ -393,6 +393,10 @@ def print_summary(report: dict[str, Any]) -> None:
             "Average citation utilization: "
             f"{citation_summary['average_citation_utilization']:.3f}"
         )
+        print(
+            "Average answered citation utilization: "
+            f"{citation_summary['average_answered_citation_utilization']:.3f}"
+        )
 
 
 def main() -> None:
