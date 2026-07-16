@@ -14,6 +14,7 @@ from src.routing.policy import (
     build_routing_abstention_response,
     should_short_circuit_answer,
 )
+from src.retrieval.context_expander import expand_with_neighbor_chunks
 
 
 router = APIRouter(prefix="/answer", tags=["answer"])
@@ -48,10 +49,17 @@ def answer(request: AnswerRequest) -> AnswerResponse:
             query=request.query,
             top_k=request.top_k,
         )
+        
+        expanded_chunks = expand_with_neighbor_chunks(
+            session=session,
+            chunks=chunks,
+            window=1,
+            max_chunks=8,
+        )
 
     return generator.generate(
         query=request.query,
-        chunks=chunks,
+        chunks=expanded_chunks,
         retrieval_strategy=request.method,
         query_type=query_classification.query_type,
     )

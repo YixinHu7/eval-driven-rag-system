@@ -23,6 +23,8 @@ from src.routing.policy import (
     build_routing_abstention_response,
     should_short_circuit_answer,
 )
+from src.retrieval.context_expander import expand_with_neighbor_chunks
+
 
 RetrievalMethod = Literal[
     "dense", "bm25", "hybrid", "dense_reranked", "hybrid_reranked"
@@ -135,10 +137,17 @@ def evaluate_method(
                     query=question.query,
                     top_k=settings.retrieval.top_k,
                 )
+                
+                expanded_chunks = expand_with_neighbor_chunks(
+                    session=session,
+                    chunks=chunks,
+                    window=1,
+                    max_chunks=8,
+                )
 
             response: AnswerResponse = generator.generate(
                 query=question.query,
-                chunks=chunks,
+                chunks=expanded_chunks,
                 retrieval_strategy=method,
                 query_type=query_classification.query_type,
             )
