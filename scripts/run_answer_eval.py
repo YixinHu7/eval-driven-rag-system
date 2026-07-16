@@ -81,6 +81,26 @@ def parse_args() -> argparse.Namespace:
         default=str(settings.data.experiments_dir),
         help="Directory where evaluation reports are written.",
     )
+    
+    parser.add_argument(
+        "--disable-context-expansion",
+        action="store_true",
+        help="Disable section-neighbor context expansion during answer evaluation.",
+    )
+
+    parser.add_argument(
+        "--context-expansion-window",
+        type=int,
+        default=settings.generation.context_expansion_window,
+        help="Neighbor window size for context expansion.",
+    )
+
+    parser.add_argument(
+        "--max-expanded-context-chunks",
+        type=int,
+        default=settings.generation.max_expanded_context_chunks,
+        help="Maximum number of chunks after context expansion.",
+    )
 
     return parser.parse_args()
 
@@ -114,6 +134,9 @@ def evaluate_method(
     method: RetrievalMethod,
     generator_name: GeneratorName,
     questions: list[EvalQuestion],
+    enable_context_expansion: bool,
+    context_expansion_window: int,
+    max_expanded_context_chunks: int,
 ) -> dict[str, Any]:
     retriever = get_retriever(method)
     generator = build_generator(generator_name)
@@ -138,16 +161,17 @@ def evaluate_method(
                     top_k=settings.retrieval.top_k,
                 )
                 
-                expanded_chunks = expand_with_neighbor_chunks(
-                    session=session,
-                    chunks=chunks,
-                    window=1,
-                    max_chunks=8,
-                )
+                if enable_context_expansion:
+                    chunks = expand_with_neighbor_chunks(
+                        session=session,
+                        chunks=chunks,
+                        window=context_expansion_window,
+                        max_chunks=max_expanded_context_chunks,
+                    )
 
             response: AnswerResponse = generator.generate(
                 query=question.query,
-                chunks=expanded_chunks,
+                chunks=chunks,
                 retrieval_strategy=method,
                 query_type=query_classification.query_type,
             )
@@ -411,11 +435,16 @@ def main() -> None:
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
+    enable_context_expansion = not args.disable_context_expansion
+
     method_results = [
         evaluate_method(
             method=method,
             generator_name=generator_name,
             questions=questions,
+            enable_context_expansion=enable_context_expansion,
+            context_expansion_window=args.context_expansion_window,
+            max_expanded_context_chunks=args.max_expanded_context_chunks,
         )
         for method in methods
     ]
@@ -426,6 +455,11 @@ def main() -> None:
         "methods": methods,
         "limit": args.limit,
         "eval_path": args.eval_path,
+        "context_expansion": {
+            "enabled": enable_context_expansion,
+            "window": args.context_expansion_window,
+            "max_expanded_context_chunks": args.max_expanded_context_chunks,
+        },
         "method_results": method_results,
     }
 
