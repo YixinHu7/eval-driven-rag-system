@@ -235,3 +235,96 @@ Cross-encoder reranking increased the likelihood that the correct evidence secti
 Because answer-level performance was already perfect with the default hybrid retriever, the reranked retriever did not provide measurable end-to-end improvement in this evaluation.
 
 The reranker is kept as an optional experimental retriever for high-recall retrieval experiments, but hybrid retrieval remains the default strategy.
+
+## Experiment 8: Context Selection Before LLM Generation
+
+### Hypothesis
+
+The LLM answer generator may produce cleaner grounded answers if generic documentation boilerplate is removed before prompt construction.
+
+Real documentation often contains low-value sections such as:
+
+* `Feedback`
+* `What's next`
+
+These sections may be retrieved because they appear near relevant documentation, but they usually do not provide direct evidence for user questions.
+
+### Change
+
+Added a context selection layer before LLM answer generation.
+
+The context selector filters out obvious non-evidence chunks, including sections such as:
+
+* `Feedback`
+* `What's next`
+
+The selector intentionally does not remove sections such as `Caution:` because caution sections can contain important technical evidence in Kubernetes documentation.
+
+### Result
+
+The context selector reduced prompt noise before LLM generation while preserving answer correctness.
+
+The full hybrid LLM answer evaluation remained stable:
+
+| Metric                     | Result |
+| -------------------------- | -----: |
+| Abstention accuracy        |  1.000 |
+| Citation presence accuracy |  1.000 |
+| Pass rate                  |  1.000 |
+| Citation ID validity rate  |  1.000 |
+| Citation alignment rate    |  1.000 |
+
+### Conclusion
+
+Context selection was kept because it improves evidence quality before generation without reducing answer-level performance.
+
+This change supports a cleaner generation pipeline:
+
+`retrieved chunks → context selection → grounded prompt → LLM answer → citation alignment`
+
+## Experiment 9: Section-Neighbor Context Expansion
+
+### Hypothesis
+
+Some technical-documentation answers may depend on nearby sections or adjacent chunks, not only the exact retrieved chunk.
+
+Adding neighboring chunks from the same document may improve answer robustness by giving the LLM more local context around retrieved evidence.
+
+### Change
+
+Added section-neighbor context expansion before answer generation.
+
+For each retrieved chunk, the system can include nearby chunks from the same document using the chunk index. The expanded context is then passed through context selection before LLM generation.
+
+The expansion process:
+
+1. Starts from retrieved chunks.
+2. Finds neighboring chunks in the same document.
+3. Deduplicates repeated chunks.
+4. Re-ranks the expanded context for stable citation numbering.
+5. Sends the expanded context to the answer generator.
+
+### Result
+
+The full hybrid LLM answer evaluation remained stable after adding neighbor expansion:
+
+| Metric                       | Result |
+| ---------------------------- | -----: |
+| Total questions              |     24 |
+| Supported questions          |     18 |
+| Abstention accuracy          |  1.000 |
+| Citation presence accuracy   |  1.000 |
+| Pass rate                    |  1.000 |
+| Citation ID validity rate    |  1.000 |
+| Citation alignment rate      |  1.000 |
+| Average citation utilization |  0.750 |
+
+The benchmark was already saturated before this change, so section-neighbor expansion did not produce a measurable pass-rate improvement.
+
+### Conclusion
+
+Section-neighbor context expansion was kept because it improves robustness without breaking answer correctness or citation alignment.
+
+This change is useful for production RAG systems because answers in technical documentation often span adjacent chunks or nearby sections.
+
+However, because the current benchmark already achieved perfect answer-level results before this change, future evaluation should include harder questions to better measure the impact of context expansion.
