@@ -1,4 +1,5 @@
 from src.core.models import AnswerResponse, RetrievedChunk
+from src.core.config import settings
 from src.generation.abstention import should_abstain
 from src.generation.citation_builder import build_used_citations
 from src.generation.llm_client import LLMClient
@@ -31,7 +32,10 @@ class LLMAnswerGenerator:
                 retrieved_chunks=chunks,
             )
 
-        context_chunks = select_context_chunks(chunks=chunks, max_chunks=5)
+        context_chunks = select_context_chunks(
+            chunks=chunks,
+            max_chunks=settings.generation.max_context_chunks,
+        )
 
         prompt = build_grounded_qa_prompt(query=query, chunks=context_chunks)
         answer = self.llm_client.generate(prompt)

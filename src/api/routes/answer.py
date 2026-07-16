@@ -50,16 +50,17 @@ def answer(request: AnswerRequest) -> AnswerResponse:
             top_k=request.top_k,
         )
         
-        expanded_chunks = expand_with_neighbor_chunks(
-            session=session,
-            chunks=chunks,
-            window=1,
-            max_chunks=8,
-        )
+        if settings.generation.enable_context_expansion:
+            chunks = expand_with_neighbor_chunks(
+                session=session,
+                chunks=chunks,
+                window=settings.generation.context_expansion_window,
+                max_chunks=settings.generation.max_expanded_context_chunks,
+            )
 
     return generator.generate(
         query=request.query,
-        chunks=expanded_chunks,
+        chunks=chunks,
         retrieval_strategy=request.method,
         query_type=query_classification.query_type,
     )

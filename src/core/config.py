@@ -57,6 +57,10 @@ class GenerationConfig(BaseModel):
     max_context_chunks: int = 5
     max_tokens: int = 512
     temperature: float = 0.0
+    
+    enable_context_expansion: bool = True
+    context_expansion_window: int = 1
+    max_expanded_context_chunks: int = 8
 
 class EvalConfig(BaseModel):
     eval_data_path: Path = Path("data/eval/questions.json")
