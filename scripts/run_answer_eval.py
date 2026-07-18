@@ -25,7 +25,6 @@ from src.routing.policy import (
 )
 from src.retrieval.context_expander import expand_with_neighbor_chunks
 
-
 RetrievalMethod = Literal[
     "dense", "bm25", "hybrid", "dense_reranked", "hybrid_reranked"
 ]
@@ -81,7 +80,7 @@ def parse_args() -> argparse.Namespace:
         default=str(settings.data.experiments_dir),
         help="Directory where evaluation reports are written.",
     )
-    
+
     parser.add_argument(
         "--disable-context-expansion",
         action="store_true",
@@ -160,7 +159,7 @@ def evaluate_method(
                     query=question.query,
                     top_k=settings.retrieval.top_k,
                 )
-                
+
                 if enable_context_expansion:
                     chunks = expand_with_neighbor_chunks(
                         session=session,
@@ -197,11 +196,24 @@ def evaluate_method(
         )
 
         status = "PASS" if getattr(answer_eval, "passed", False) else "FAIL"
+
+        evidence_output = ""
+
+        if question.required_evidence_sections:
+            evidence_output = (
+                " "
+                f"evidence_coverage="
+                f"{answer_eval.required_evidence_coverage:.3f} "
+                f"evidence_passed="
+                f"{answer_eval.required_evidence_passed}"
+            )
+
         print(
             f"[{method} | {generator_name}] "
             f"{question.question_id}: {status} "
             f"abstained={response.abstained} "
             f"citations={len(response.citations)}"
+            f"{evidence_output}"
         )
 
     answer_summary = summarize_answer_results(
@@ -338,6 +350,16 @@ def write_csv_report(
                     "citation_presence_correct": answer_eval[
                         "citation_presence_correct"
                     ],
+                    "required_evidence_sections": ";".join(
+                        answer_eval["required_evidence_sections"]
+                    ),
+                    "cited_evidence_sections": ";".join(
+                        answer_eval["cited_evidence_sections"]
+                    ),
+                    "required_evidence_coverage": answer_eval[
+                        "required_evidence_coverage"
+                    ],
+                    "required_evidence_passed": answer_eval["required_evidence_passed"],
                     "passed": answer_eval["passed"],
                     "referenced_citation_ids": ";".join(
                         str(citation_id)
@@ -405,6 +427,20 @@ def print_summary(report: dict[str, Any]) -> None:
             f"{answer_summary['citation_presence_accuracy']:.3f}"
         )
         print(f"Pass rate: {answer_summary['pass_rate']:.3f}")
+
+        required_evidence_questions = answer_summary["required_evidence_questions"]
+
+        if required_evidence_questions:
+            print("Required evidence questions: " f"{required_evidence_questions}")
+            print(
+                "Required evidence accuracy: "
+                f"{answer_summary['required_evidence_accuracy']:.3f}"
+            )
+            print(
+                "Average required evidence coverage: "
+                f"{answer_summary['average_required_evidence_coverage']:.3f}"
+            )
+            
         print(
             "Citation ID validity rate: "
             f"{citation_summary['citation_ids_valid_rate']:.3f}"
