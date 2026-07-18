@@ -66,6 +66,13 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional limit on number of evaluation questions.",
     )
+    
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=settings.retrieval.top_k,
+        help="Number of initial chunks retrieved before context expansion.",
+    )
 
     parser.add_argument(
         "--eval-path",
@@ -133,6 +140,7 @@ def evaluate_method(
     method: RetrievalMethod,
     generator_name: GeneratorName,
     questions: list[EvalQuestion],
+    top_k: int,
     enable_context_expansion: bool,
     context_expansion_window: int,
     max_expanded_context_chunks: int,
@@ -157,7 +165,7 @@ def evaluate_method(
                 chunks = retriever.retrieve(
                     session=session,
                     query=question.query,
-                    top_k=settings.retrieval.top_k,
+                    top_k=top_k,
                 )
 
                 if enable_context_expansion:
@@ -232,6 +240,7 @@ def evaluate_method(
     return {
         "method": method,
         "generator": generator_name,
+        "top_k": top_k,
         "supported_questions": sum(1 for question in questions if question.supported),
         "answer_summary": serialize_model(answer_summary),
         "slice_summary": [serialize_model(item) for item in slice_summary],
@@ -419,6 +428,7 @@ def print_summary(report: dict[str, Any]) -> None:
 
         print(f"\nMethod: {method}")
         print(f"Generator: {generator}")
+        print(f"Initial retrieval top-k: {method_result['top_k']}")
         print(f"Total questions: {answer_summary['total_questions']}")
         print(f"Supported questions: {method_result['supported_questions']}")
         print(f"Abstention accuracy: {answer_summary['abstention_accuracy']:.3f}")
@@ -461,6 +471,9 @@ def print_summary(report: dict[str, Any]) -> None:
 
 def main() -> None:
     args = parse_args()
+    
+    if args.top_k <= 0:
+        raise ValueError("--top-k must be greater than 0.")
 
     generator_name: GeneratorName = args.generator
     methods = resolve_methods(args.method)
@@ -478,6 +491,7 @@ def main() -> None:
             method=method,
             generator_name=generator_name,
             questions=questions,
+            top_k=args.top_k,
             enable_context_expansion=enable_context_expansion,
             context_expansion_window=args.context_expansion_window,
             max_expanded_context_chunks=args.max_expanded_context_chunks,
@@ -491,6 +505,7 @@ def main() -> None:
         "methods": methods,
         "limit": args.limit,
         "eval_path": args.eval_path,
+        "top_k": args.top_k,
         "context_expansion": {
             "enabled": enable_context_expansion,
             "window": args.context_expansion_window,
