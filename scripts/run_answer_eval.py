@@ -66,7 +66,16 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional limit on number of evaluation questions.",
     )
-    
+
+    parser.add_argument(
+        "--question-ids",
+        nargs="+",
+        default=None,
+        help=(
+            "Optional question IDs to evaluate, such as " "--question-ids q025 q026."
+        ),
+    )
+
     parser.add_argument(
         "--top-k",
         type=int,
@@ -127,11 +136,31 @@ def build_generator(
     return SimpleAnswerGenerator()
 
 
-def get_questions(eval_path: str, limit: int | None) -> list[EvalQuestion]:
+def get_questions(
+    eval_path: str,
+    limit: int | None,
+    question_ids: list[str] | None,
+) -> list[EvalQuestion]:
     questions = load_eval_questions(Path(eval_path))
 
+    if question_ids:
+        requested_ids = set(question_ids)
+
+        selected_questions = [
+            question for question in questions if question.question_id in requested_ids
+        ]
+
+        found_ids = {question.question_id for question in selected_questions}
+        missing_ids = sorted(requested_ids - found_ids)
+
+        if missing_ids:
+            missing_text = ", ".join(missing_ids)
+            raise ValueError(f"Unknown evaluation question IDs: {missing_text}")
+
+        questions = selected_questions
+
     if limit is not None:
-        return questions[:limit]
+        questions = questions[:limit]
 
     return questions
 
@@ -450,7 +479,7 @@ def print_summary(report: dict[str, Any]) -> None:
                 "Average required evidence coverage: "
                 f"{answer_summary['average_required_evidence_coverage']:.3f}"
             )
-            
+
         print(
             "Citation ID validity rate: "
             f"{citation_summary['citation_ids_valid_rate']:.3f}"
@@ -471,13 +500,17 @@ def print_summary(report: dict[str, Any]) -> None:
 
 def main() -> None:
     args = parse_args()
-    
+
     if args.top_k <= 0:
         raise ValueError("--top-k must be greater than 0.")
 
     generator_name: GeneratorName = args.generator
     methods = resolve_methods(args.method)
-    questions = get_questions(args.eval_path, args.limit)
+    questions = get_questions(
+        eval_path=args.eval_path,
+        limit=args.limit,
+        question_ids=args.question_ids,
+    )
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -504,6 +537,7 @@ def main() -> None:
         "generator": generator_name,
         "methods": methods,
         "limit": args.limit,
+        "question_ids": args.question_ids,
         "eval_path": args.eval_path,
         "top_k": args.top_k,
         "context_expansion": {
