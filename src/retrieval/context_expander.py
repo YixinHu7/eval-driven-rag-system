@@ -59,26 +59,32 @@ def expand_with_neighbor_chunks(
     window: int = 1,
     max_chunks: int = 8,
 ) -> list[RetrievedChunk]:
-    if not chunks:
+    if not chunks or max_chunks <= 0:
         return []
 
-    expanded: list[RetrievedChunk] = []
-    seen_chunk_ids: set[str] = set()
+    unique_seed_chunks: list[RetrievedChunk] = []
+    seen_seed_ids: set[str] = set()
 
-    for seed_chunk in chunks:
-        if len(expanded) >= max_chunks:
-            break
+    for chunk in chunks:
+        if chunk.chunk_id in seen_seed_ids:
+            continue
 
+        unique_seed_chunks.append(chunk)
+        seen_seed_ids.add(chunk.chunk_id)
+
+    # Preserve all initial retrieval results before adding neighbor chunks.
+    expanded = unique_seed_chunks[:max_chunks]
+    seen_chunk_ids = {chunk.chunk_id for chunk in expanded}
+
+    if len(expanded) >= max_chunks:
+        return rerank_context_chunks(expanded)
+
+    for seed_chunk in unique_seed_chunks:
         neighbor_orms = get_neighbor_chunks(
             session=session,
             seed_chunk=seed_chunk,
             window=window,
         )
-
-        # Keep the retrieved seed chunk first so its original ranking signal is preserved.
-        if seed_chunk.chunk_id not in seen_chunk_ids:
-            expanded.append(seed_chunk)
-            seen_chunk_ids.add(seed_chunk.chunk_id)
 
         for neighbor_orm in neighbor_orms:
             if len(expanded) >= max_chunks:
@@ -91,11 +97,14 @@ def expand_with_neighbor_chunks(
                 orm_chunk_to_retrieved_chunk(
                     chunk=neighbor_orm,
                     retrieval_score=seed_chunk.retrieval_score,
-                    retrieval_method=f"{seed_chunk.retrieval_method}_neighbor",
+                    retrieval_method=(f"{seed_chunk.retrieval_method}_neighbor"),
                     rank=len(expanded) + 1,
                 )
             )
             seen_chunk_ids.add(neighbor_orm.chunk_id)
+
+        if len(expanded) >= max_chunks:
+            break
 
     return rerank_context_chunks(expanded)
 
