@@ -58,9 +58,13 @@ def expand_with_neighbor_chunks(
     chunks: list[RetrievedChunk],
     window: int = 1,
     max_chunks: int = 8,
+    max_neighbor_context_chars: int | None = None,
 ) -> list[RetrievedChunk]:
     if not chunks or max_chunks <= 0:
         return []
+
+    if max_neighbor_context_chars is not None and max_neighbor_context_chars < 0:
+        raise ValueError("max_neighbor_context_chars must be at least 0.")
 
     unique_seed_chunks: list[RetrievedChunk] = []
     seen_seed_ids: set[str] = set()
@@ -72,12 +76,18 @@ def expand_with_neighbor_chunks(
         unique_seed_chunks.append(chunk)
         seen_seed_ids.add(chunk.chunk_id)
 
-    # Preserve all initial retrieval results before adding neighbor chunks.
+    # The existing max_chunks setting remains the hard limit on
+    # the final number of context chunks.
     expanded = unique_seed_chunks[:max_chunks]
     seen_chunk_ids = {chunk.chunk_id for chunk in expanded}
 
     if len(expanded) >= max_chunks:
         return rerank_context_chunks(expanded)
+
+    if max_neighbor_context_chars == 0:
+        return rerank_context_chunks(expanded)
+
+    added_neighbor_context_chars = 0
 
     for seed_chunk in unique_seed_chunks:
         neighbor_orms = get_neighbor_chunks(
@@ -93,6 +103,14 @@ def expand_with_neighbor_chunks(
             if neighbor_orm.chunk_id in seen_chunk_ids:
                 continue
 
+            neighbor_context_chars = len(neighbor_orm.chunk_text)
+
+            if max_neighbor_context_chars is not None and (
+                added_neighbor_context_chars + neighbor_context_chars
+                > max_neighbor_context_chars
+            ):
+                continue
+
             expanded.append(
                 orm_chunk_to_retrieved_chunk(
                     chunk=neighbor_orm,
@@ -102,6 +120,7 @@ def expand_with_neighbor_chunks(
                 )
             )
             seen_chunk_ids.add(neighbor_orm.chunk_id)
+            added_neighbor_context_chars += neighbor_context_chars
 
         if len(expanded) >= max_chunks:
             break
