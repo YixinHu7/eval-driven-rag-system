@@ -122,6 +122,15 @@ def parse_args() -> argparse.Namespace:
         help="Maximum number of chunks after context expansion.",
     )
 
+    parser.add_argument(
+        "--max-neighbor-context-chars",
+        type=int,
+        default=(settings.generation.max_neighbor_context_chars),
+        help=(
+            "Maximum total characters contributed by newly " "added neighbor chunks."
+        ),
+    )
+
     return parser.parse_args()
 
 
@@ -178,6 +187,7 @@ def evaluate_method(
     enable_context_expansion: bool,
     context_expansion_window: int,
     max_expanded_context_chunks: int,
+    max_neighbor_context_chars: int,
 ) -> dict[str, Any]:
     retriever = get_retriever(method)
     generator = build_generator(generator_name)
@@ -217,6 +227,7 @@ def evaluate_method(
                         chunks=initial_chunks,
                         window=context_expansion_window,
                         max_chunks=max_expanded_context_chunks,
+                        max_neighbor_context_chars=(max_neighbor_context_chars),
                     )
 
             response = generator.generate(
@@ -510,6 +521,10 @@ def print_summary(report: dict[str, Any]) -> None:
         print(f"\nMethod: {method}")
         print(f"Generator: {generator}")
         print(f"Initial retrieval top-k: {method_result['top_k']}")
+        print(
+            "Maximum neighbor context characters: "
+            f"{report['context_expansion']['max_neighbor_context_chars']}"
+        )
         print(f"Total questions: {answer_summary['total_questions']}")
         print(f"Supported questions: {method_result['supported_questions']}")
         print(f"Abstention accuracy: {answer_summary['abstention_accuracy']:.3f}")
@@ -591,6 +606,8 @@ def main() -> None:
 
     if args.top_k <= 0:
         raise ValueError("--top-k must be greater than 0.")
+    if args.max_neighbor_context_chars < 0:
+        raise ValueError("--max-neighbor-context-chars must be at least 0.")
 
     generator_name: GeneratorName = args.generator
     methods = resolve_methods(args.method)
@@ -616,6 +633,7 @@ def main() -> None:
             enable_context_expansion=enable_context_expansion,
             context_expansion_window=args.context_expansion_window,
             max_expanded_context_chunks=args.max_expanded_context_chunks,
+            max_neighbor_context_chars=(args.max_neighbor_context_chars),
         )
         for method in methods
     ]
@@ -632,6 +650,7 @@ def main() -> None:
             "enabled": enable_context_expansion,
             "window": args.context_expansion_window,
             "max_expanded_context_chunks": args.max_expanded_context_chunks,
+            "max_neighbor_context_chars": (args.max_neighbor_context_chars),
         },
         "method_results": method_results,
     }
