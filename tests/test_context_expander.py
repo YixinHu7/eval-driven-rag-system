@@ -28,14 +28,17 @@ def make_chunk(
 def make_orm_chunk(
     chunk_id: str,
     chunk_index: int,
+    chunk_text: str | None = None,
 ) -> Any:
+    content = chunk_text if chunk_text is not None else f"Content for {chunk_id}."
+
     return SimpleNamespace(
         chunk_id=chunk_id,
         doc_id="k8s_probes",
         chunk_index=chunk_index,
-        chunk_text=f"Content for {chunk_id}.",
+        chunk_text=content,
         section_title=f"Section {chunk_id}",
-        section_path=f"Configure Probes > Section {chunk_id}",
+        section_path=(f"Configure Probes > Section {chunk_id}"),
         document=SimpleNamespace(
             title="Configure Probes",
             source_url="https://example.com",
@@ -247,3 +250,200 @@ def test_duplicate_seed_chunks_are_removed(
     assert len(result) == 1
     assert result[0].chunk_id == "seed_1"
     assert result[0].rank == 1
+
+
+def test_zero_neighbor_character_budget_preserves_only_seeds(
+    monkeypatch,
+) -> None:
+    seed = make_chunk(
+        chunk_id="seed_1",
+        rank=1,
+        retrieval_score=0.9,
+        retrieval_method="hybrid",
+    )
+    neighbor = make_orm_chunk(
+        chunk_id="neighbor_1",
+        chunk_index=2,
+        chunk_text="Neighbor content",
+    )
+
+    def fake_get_neighbor_chunks(
+        session,
+        seed_chunk,
+        window,
+    ):
+        return [neighbor]
+
+    monkeypatch.setattr(
+        context_expander,
+        "get_neighbor_chunks",
+        fake_get_neighbor_chunks,
+    )
+
+    result = context_expander.expand_with_neighbor_chunks(
+        session=object(),
+        chunks=[seed],
+        max_chunks=8,
+        max_neighbor_context_chars=0,
+    )
+
+    assert [chunk.chunk_id for chunk in result] == [
+        "seed_1",
+    ]
+
+
+def test_neighbor_exceeding_character_budget_is_skipped(
+    monkeypatch,
+) -> None:
+    seed = make_chunk(
+        chunk_id="seed_1",
+        rank=1,
+        retrieval_score=0.9,
+        retrieval_method="hybrid",
+    )
+    neighbor = make_orm_chunk(
+        chunk_id="neighbor_1",
+        chunk_index=2,
+        chunk_text="123456",
+    )
+
+    def fake_get_neighbor_chunks(
+        session,
+        seed_chunk,
+        window,
+    ):
+        return [neighbor]
+
+    monkeypatch.setattr(
+        context_expander,
+        "get_neighbor_chunks",
+        fake_get_neighbor_chunks,
+    )
+
+    result = context_expander.expand_with_neighbor_chunks(
+        session=object(),
+        chunks=[seed],
+        max_chunks=8,
+        max_neighbor_context_chars=5,
+    )
+
+    assert [chunk.chunk_id for chunk in result] == [
+        "seed_1",
+    ]
+
+
+def test_neighbors_are_added_until_character_budget_is_reached(
+    monkeypatch,
+) -> None:
+    seed = make_chunk(
+        chunk_id="seed_1",
+        rank=1,
+        retrieval_score=0.9,
+        retrieval_method="hybrid",
+    )
+    neighbor_1 = make_orm_chunk(
+        chunk_id="neighbor_1",
+        chunk_index=2,
+        chunk_text="12345",
+    )
+    neighbor_2 = make_orm_chunk(
+        chunk_id="neighbor_2",
+        chunk_index=3,
+        chunk_text="1234",
+    )
+
+    def fake_get_neighbor_chunks(
+        session,
+        seed_chunk,
+        window,
+    ):
+        return [
+            neighbor_1,
+            neighbor_2,
+        ]
+
+    monkeypatch.setattr(
+        context_expander,
+        "get_neighbor_chunks",
+        fake_get_neighbor_chunks,
+    )
+
+    result = context_expander.expand_with_neighbor_chunks(
+        session=object(),
+        chunks=[seed],
+        max_chunks=8,
+        max_neighbor_context_chars=8,
+    )
+
+    assert [chunk.chunk_id for chunk in result] == [
+        "seed_1",
+        "neighbor_1",
+    ]
+
+
+def test_neighbor_character_budget_allows_exact_total(
+    monkeypatch,
+) -> None:
+    seed = make_chunk(
+        chunk_id="seed_1",
+        rank=1,
+        retrieval_score=0.9,
+        retrieval_method="hybrid",
+    )
+    neighbor_1 = make_orm_chunk(
+        chunk_id="neighbor_1",
+        chunk_index=2,
+        chunk_text="12345",
+    )
+    neighbor_2 = make_orm_chunk(
+        chunk_id="neighbor_2",
+        chunk_index=3,
+        chunk_text="1234",
+    )
+
+    def fake_get_neighbor_chunks(
+        session,
+        seed_chunk,
+        window,
+    ):
+        return [
+            neighbor_1,
+            neighbor_2,
+        ]
+
+    monkeypatch.setattr(
+        context_expander,
+        "get_neighbor_chunks",
+        fake_get_neighbor_chunks,
+    )
+
+    result = context_expander.expand_with_neighbor_chunks(
+        session=object(),
+        chunks=[seed],
+        max_chunks=8,
+        max_neighbor_context_chars=9,
+    )
+
+    assert [chunk.chunk_id for chunk in result] == [
+        "seed_1",
+        "neighbor_1",
+        "neighbor_2",
+    ]
+
+
+def test_negative_neighbor_character_budget_raises_error() -> None:
+    seed = make_chunk(
+        chunk_id="seed_1",
+        rank=1,
+    )
+
+    try:
+        context_expander.expand_with_neighbor_chunks(
+            session=object(),
+            chunks=[seed],
+            max_neighbor_context_chars=-1,
+        )
+    except ValueError as error:
+        assert str(error) == ("max_neighbor_context_chars must be at least 0.")
+    else:
+        raise AssertionError("Expected a ValueError for a negative budget.")
