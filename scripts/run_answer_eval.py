@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from src.core.models import AnswerResponse
+from src.core.models import AnswerResponse, RetrievedChunk
 from src.core.config import settings
 from src.evaluation.answer_metrics import (
     evaluate_answer_result,
@@ -24,6 +24,11 @@ from src.routing.policy import (
     should_short_circuit_answer,
 )
 from src.retrieval.context_expander import expand_with_neighbor_chunks
+from src.evaluation.context_expansion_metrics import (
+    ContextExpansionEvalResult,
+    evaluate_context_expansion,
+    summarize_context_expansion_results,
+)
 
 RetrievalMethod = Literal[
     "dense", "bm25", "hybrid", "dense_reranked", "hybrid_reranked"
@@ -179,10 +184,15 @@ def evaluate_method(
 
     answer_eval_results = []
     citation_eval_results = []
+    context_expansion_eval_results: list[ContextExpansionEvalResult] = []
     records: list[dict[str, Any]] = []
 
     for question in questions:
         query_classification = classify_query(question.query)
+
+        retrieval_performed = False
+        initial_chunks: list[RetrievedChunk] = []
+        final_chunks: list[RetrievedChunk] = []
 
         if should_short_circuit_answer(query_classification):
             response = build_routing_abstention_response(
@@ -190,24 +200,28 @@ def evaluate_method(
                 retrieval_strategy=method,
             )
         else:
+            retrieval_performed = True
+
             with SessionLocal() as session:
-                chunks = retriever.retrieve(
+                initial_chunks = retriever.retrieve(
                     session=session,
                     query=question.query,
                     top_k=top_k,
                 )
 
+                final_chunks = initial_chunks
+
                 if enable_context_expansion:
-                    chunks = expand_with_neighbor_chunks(
+                    final_chunks = expand_with_neighbor_chunks(
                         session=session,
-                        chunks=chunks,
+                        chunks=initial_chunks,
                         window=context_expansion_window,
                         max_chunks=max_expanded_context_chunks,
                     )
 
-            response: AnswerResponse = generator.generate(
+            response = generator.generate(
                 query=question.query,
-                chunks=chunks,
+                chunks=final_chunks,
                 retrieval_strategy=method,
                 query_type=query_classification.query_type,
             )
@@ -219,8 +233,16 @@ def evaluate_method(
         )
         citation_eval = evaluate_citations(response)
 
+        context_expansion_eval = evaluate_context_expansion(
+            initial_chunks=initial_chunks,
+            final_chunks=final_chunks,
+            expansion_enabled=enable_context_expansion,
+            retrieval_performed=retrieval_performed,
+        )
+
         answer_eval_results.append(answer_eval)
         citation_eval_results.append(citation_eval)
+        context_expansion_eval_results.append(context_expansion_eval)
 
         records.append(
             {
@@ -229,6 +251,7 @@ def evaluate_method(
                 "response": serialize_model(response),
                 "answer_eval": serialize_model(answer_eval),
                 "citation_eval": serialize_model(citation_eval),
+                "context_expansion_eval": serialize_model(context_expansion_eval),
             }
         )
 
@@ -265,6 +288,10 @@ def evaluate_method(
         citation_eval_results=citation_eval_results,
         answer_eval_results=answer_eval_results,
     )
+    context_expansion_summary = summarize_context_expansion_results(
+        results=context_expansion_eval_results,
+        expansion_enabled=enable_context_expansion,
+    )
 
     return {
         "method": method,
@@ -274,6 +301,7 @@ def evaluate_method(
         "answer_summary": serialize_model(answer_summary),
         "slice_summary": [serialize_model(item) for item in slice_summary],
         "citation_summary": citation_summary,
+        "context_expansion_summary": serialize_model(context_expansion_summary),
         "records": records,
     }
 
@@ -369,6 +397,7 @@ def write_csv_report(
             response = record["response"]
             answer_eval = record["answer_eval"]
             citation_eval = record["citation_eval"]
+            context_expansion_eval = record["context_expansion_eval"]
 
             rows.append(
                 {
@@ -428,6 +457,28 @@ def write_csv_report(
                         "citation_alignment_correct"
                     ],
                     "citation_utilization": citation_eval["citation_utilization"],
+                    "retrieval_performed": context_expansion_eval[
+                        "retrieval_performed"
+                    ],
+                    "context_expansion_enabled": context_expansion_eval[
+                        "expansion_enabled"
+                    ],
+                    "initial_chunk_count": context_expansion_eval[
+                        "initial_chunk_count"
+                    ],
+                    "final_chunk_count": context_expansion_eval["final_chunk_count"],
+                    "added_neighbor_count": context_expansion_eval[
+                        "added_neighbor_count"
+                    ],
+                    "initial_context_chars": context_expansion_eval[
+                        "initial_context_chars"
+                    ],
+                    "final_context_chars": context_expansion_eval[
+                        "final_context_chars"
+                    ],
+                    "added_context_chars": context_expansion_eval[
+                        "added_context_chars"
+                    ],
                 }
             )
 
@@ -454,6 +505,7 @@ def print_summary(report: dict[str, Any]) -> None:
         generator = method_result["generator"]
         answer_summary = method_result["answer_summary"]
         citation_summary = method_result["citation_summary"]
+        context_expansion_summary = method_result["context_expansion_summary"]
 
         print(f"\nMethod: {method}")
         print(f"Generator: {generator}")
@@ -495,6 +547,42 @@ def print_summary(report: dict[str, Any]) -> None:
         print(
             "Average answered citation utilization: "
             f"{citation_summary['average_answered_citation_utilization']:.3f}"
+        )
+        print(
+            "Context expansion enabled: "
+            f"{context_expansion_summary['expansion_enabled']}"
+        )
+        print(
+            "Retrieval questions: "
+            f"{context_expansion_summary['retrieval_questions']}"
+        )
+        print(
+            "Questions with added neighbors: "
+            f"{context_expansion_summary['questions_with_added_neighbors']}"
+        )
+        print(
+            "Neighbor addition rate: "
+            f"{context_expansion_summary['neighbor_addition_rate']:.3f}"
+        )
+        print(
+            "Average initial chunks: "
+            f"{context_expansion_summary['average_initial_chunks']:.3f}"
+        )
+        print(
+            "Average final chunks: "
+            f"{context_expansion_summary['average_final_chunks']:.3f}"
+        )
+        print(
+            "Average added neighbors: "
+            f"{context_expansion_summary['average_added_neighbors']:.3f}"
+        )
+        print(
+            "Average added context characters: "
+            f"{context_expansion_summary['average_added_context_chars']:.1f}"
+        )
+        print(
+            "Maximum added neighbors: "
+            f"{context_expansion_summary['max_added_neighbors']}"
         )
 
 
