@@ -286,45 +286,120 @@ This change supports a cleaner generation pipeline:
 
 ### Hypothesis
 
-Some technical-documentation answers may depend on nearby sections or adjacent chunks, not only the exact retrieved chunk.
+Some technical-documentation questions require evidence from adjacent chunks or nearby sections rather than from only the highest-ranked retrieved chunk.
 
-Adding neighboring chunks from the same document may improve answer robustness by giving the LLM more local context around retrieved evidence.
+Section-neighbor context expansion may improve evidence completeness by adding nearby chunks from the same document. However, unconditional expansion may also increase prompt size without improving answer quality when the initial retriever already returns sufficient context.
 
 ### Change
 
-Added section-neighbor context expansion before answer generation.
+Added configurable section-neighbor context expansion before answer generation.
 
-For each retrieved chunk, the system can include nearby chunks from the same document using the chunk index. The expanded context is then passed through context selection before LLM generation.
+The expansion pipeline:
 
-The expansion process:
+1. Starts with the initial retrieved chunks.
+2. Preserves all initial seed chunks before adding neighbors.
+3. Finds adjacent chunks from the same document using the chunk index.
+4. Deduplicates repeated chunks.
+5. Limits expansion using:
 
-1. Starts from retrieved chunks.
-2. Finds neighboring chunks in the same document.
-3. Deduplicates repeated chunks.
-4. Re-ranks the expanded context for stable citation numbering.
-5. Sends the expanded context to the answer generator.
+   * neighbor window
+   * maximum final chunk count
+   * maximum added neighbor-context characters
+6. Reassigns stable sequential ranks.
+7. Passes the resulting context through context selection before generation.
 
-### Result
+The evaluated configuration used:
 
-The full hybrid LLM answer evaluation remained stable after adding neighbor expansion:
+| Setting                             | Value |
+| ----------------------------------- | ----: |
+| Expansion window                    |     1 |
+| Maximum expanded chunks             |     8 |
+| Maximum neighbor-context characters |  6000 |
 
-| Metric                       | Result |
-| ---------------------------- | -----: |
-| Total questions              |     24 |
-| Supported questions          |     18 |
-| Abstention accuracy          |  1.000 |
-| Citation presence accuracy   |  1.000 |
-| Pass rate                    |  1.000 |
-| Citation ID validity rate    |  1.000 |
-| Citation alignment rate      |  1.000 |
-| Average citation utilization |  0.750 |
+The answer evaluator was also extended with `required_evidence_sections`, allowing multi-section questions to pass only when the answer actually cites every required evidence section.
 
-The benchmark was already saturated before this change, so section-neighbor expansion did not produce a measurable pass-rate improvement.
+Two targeted multi-section questions were added:
+
+* a StatefulSet question requiring both `Pod Identity` and `Ordinal Index`
+* a Deployment question requiring both `Rolling Update Deployment` and `Max Unavailable`
+
+### Final Evaluation Matrix
+
+Five final scenarios were evaluated using the LLM answer generator.
+
+| Scenario                                      | Questions | Pass Rate | Required Evidence Accuracy | Evidence Coverage | Average Added Neighbors | Average Added Characters |
+| --------------------------------------------- | --------: | --------: | -------------------------: | ----------------: | ----------------------: | -----------------------: |
+| Hybrid, top-k 5, expansion enabled            |        26 |     1.000 |                      1.000 |             1.000 |                   3.000 |                  2191.95 |
+| Hybrid, top-k 5, expansion disabled           |        26 |     1.000 |                      1.000 |             1.000 |                   0.000 |                     0.00 |
+| Hybrid, top-k 1, targeted, expansion enabled  |         2 |     1.000 |                      1.000 |             1.000 |                   2.000 |                  1543.50 |
+| Hybrid, top-k 1, targeted, expansion disabled |         2 |     0.000 |                      0.000 |             0.500 |                   0.000 |                     0.00 |
+| Hybrid reranked, top-k 5, expansion enabled   |        26 |     1.000 |                      1.000 |             1.000 |                   3.000 |                  2007.85 |
+
+All scenarios maintained:
+
+* citation ID validity rate: `1.000`
+* citation alignment rate: `1.000`
+* answered-only citation utilization: `1.000`
+
+For the full 26-question evaluations, average citation utilization was `0.769`. This reflects the 20 supported questions that returned citations and the 6 unsupported questions that correctly abstained without citations.
+
+### Default Top-k Result
+
+With the default initial retrieval setting of `top_k=5`, both expansion-enabled and expansion-disabled Hybrid evaluation achieved:
+
+* abstention accuracy: `1.000`
+* citation presence accuracy: `1.000`
+* pass rate: `1.000`
+* required evidence accuracy: `1.000`
+* average required evidence coverage: `1.000`
+
+Expansion did not provide measurable answer-quality improvement under this configuration.
+
+It did, however, add neighbors for every retrieval question:
+
+* questions with added neighbors: `20`
+* neighbor addition rate: `1.000`
+* average initial chunks: `5.000`
+* average final chunks: `8.000`
+* average added neighbors: `3.000`
+* average added context characters: `2191.95`
+
+The expansion process therefore reached the maximum final chunk count for every question that performed retrieval.
+
+### Targeted Top-k 1 Ablation
+
+A stricter experiment used `top_k=1` and evaluated only the two neighbor-dependent multi-section questions.
+
+With expansion enabled:
+
+* pass rate: `1.000`
+* required evidence accuracy: `1.000`
+* average required evidence coverage: `1.000`
+* average initial chunks: `1.000`
+* average final chunks: `3.000`
+* average added neighbors: `2.000`
+* average added context characters: `1543.50`
+
+With expansion disabled:
+
+* pass rate: `0.000`
+* required evidence accuracy: `0.000`
+* average required evidence coverage: `0.500`
+
+Each disabled-expansion answer cited only one of the two required evidence sections. Expansion successfully added the adjacent section and allowed both targeted questions to pass.
 
 ### Conclusion
 
-Section-neighbor context expansion was kept because it improves robustness without breaking answer correctness or citation alignment.
+Section-neighbor context expansion provides measurable value when initial retrieval is narrow and the answer requires evidence from adjacent chunks.
 
-This change is useful for production RAG systems because answers in technical documentation often span adjacent chunks or nearby sections.
+However, unconditional expansion is not cost-effective under the current default `top_k=5` configuration. It added an average of three chunks and approximately 2192 characters to every retrieval question without improving answer correctness, citation quality, or required evidence coverage.
 
-However, because the current benchmark already achieved perfect answer-level results before this change, future evaluation should include harder questions to better measure the impact of context expansion.
+The final design decision is:
+
+* retain section-neighbor expansion as a configurable capability
+* preserve its character and chunk-count limits
+* use it for constrained-retrieval or neighbor-dependent workflows
+* avoid treating it as an unconditional default when `top_k=5`
+* consider adaptive expansion as future work
+
+An adaptive policy could trigger expansion only when retrieval confidence is low, evidence requirements are incomplete, or the initial context indicates that an adjacent section is needed.
