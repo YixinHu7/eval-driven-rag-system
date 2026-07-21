@@ -102,10 +102,24 @@ def parse_args() -> argparse.Namespace:
         help="Directory where evaluation reports are written.",
     )
 
-    parser.add_argument(
-        "--disable-context-expansion",
+    context_expansion_group = parser.add_mutually_exclusive_group()
+
+    context_expansion_group.add_argument(
+        "--enable-context-expansion",
+        dest="enable_context_expansion",
         action="store_true",
-        help="Disable section-neighbor context expansion during answer evaluation.",
+        help="Enable section-neighbor context expansion.",
+    )
+
+    context_expansion_group.add_argument(
+        "--disable-context-expansion",
+        dest="enable_context_expansion",
+        action="store_false",
+        help="Disable section-neighbor context expansion.",
+    )
+
+    parser.set_defaults(
+        enable_context_expansion=None,
     )
 
     parser.add_argument(
@@ -622,7 +636,11 @@ def main() -> None:
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
-    enable_context_expansion = not args.disable_context_expansion
+    enable_context_expansion = (
+        settings.generation.enable_context_expansion
+        if args.enable_context_expansion is None
+        else args.enable_context_expansion
+    )
 
     method_results = [
         evaluate_method(

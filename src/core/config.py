@@ -66,7 +66,7 @@ class GenerationConfig(BaseModel):
     max_tokens: int = 512
     temperature: float = 0.0
 
-    enable_context_expansion: bool = True
+    enable_context_expansion: bool = False
     context_expansion_window: int = 1
     max_expanded_context_chunks: int = 8
     max_neighbor_context_chars: int = Field(default=6000, ge=0)
