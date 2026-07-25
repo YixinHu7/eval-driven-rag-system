@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from src.core.models import AnswerResponse
+from src.core.models import AnswerResponse, RetrievedChunk
 from src.core.config import settings
 from src.evaluation.answer_metrics import (
     evaluate_answer_result,
@@ -22,6 +22,12 @@ from src.routing.query_classifier import classify_query
 from src.routing.policy import (
     build_routing_abstention_response,
     should_short_circuit_answer,
+)
+from src.retrieval.context_expander import expand_with_neighbor_chunks
+from src.evaluation.context_expansion_metrics import (
+    ContextExpansionEvalResult,
+    evaluate_context_expansion,
+    summarize_context_expansion_results,
 )
 
 RetrievalMethod = Literal[
@@ -67,6 +73,22 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--question-ids",
+        nargs="+",
+        default=None,
+        help=(
+            "Optional question IDs to evaluate, such as " "--question-ids q025 q026."
+        ),
+    )
+
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=settings.retrieval.top_k,
+        help="Number of initial chunks retrieved before context expansion.",
+    )
+
+    parser.add_argument(
         "--eval-path",
         type=str,
         default=str(settings.evaluation.eval_data_path),
@@ -78,6 +100,49 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=str(settings.data.experiments_dir),
         help="Directory where evaluation reports are written.",
+    )
+
+    context_expansion_group = parser.add_mutually_exclusive_group()
+
+    context_expansion_group.add_argument(
+        "--enable-context-expansion",
+        dest="enable_context_expansion",
+        action="store_true",
+        help="Enable section-neighbor context expansion.",
+    )
+
+    context_expansion_group.add_argument(
+        "--disable-context-expansion",
+        dest="enable_context_expansion",
+        action="store_false",
+        help="Disable section-neighbor context expansion.",
+    )
+
+    parser.set_defaults(
+        enable_context_expansion=None,
+    )
+
+    parser.add_argument(
+        "--context-expansion-window",
+        type=int,
+        default=settings.generation.context_expansion_window,
+        help="Neighbor window size for context expansion.",
+    )
+
+    parser.add_argument(
+        "--max-expanded-context-chunks",
+        type=int,
+        default=settings.generation.max_expanded_context_chunks,
+        help="Maximum number of chunks after context expansion.",
+    )
+
+    parser.add_argument(
+        "--max-neighbor-context-chars",
+        type=int,
+        default=(settings.generation.max_neighbor_context_chars),
+        help=(
+            "Maximum total characters contributed by newly " "added neighbor chunks."
+        ),
     )
 
     return parser.parse_args()
@@ -99,11 +164,31 @@ def build_generator(
     return SimpleAnswerGenerator()
 
 
-def get_questions(eval_path: str, limit: int | None) -> list[EvalQuestion]:
+def get_questions(
+    eval_path: str,
+    limit: int | None,
+    question_ids: list[str] | None,
+) -> list[EvalQuestion]:
     questions = load_eval_questions(Path(eval_path))
 
+    if question_ids:
+        requested_ids = set(question_ids)
+
+        selected_questions = [
+            question for question in questions if question.question_id in requested_ids
+        ]
+
+        found_ids = {question.question_id for question in selected_questions}
+        missing_ids = sorted(requested_ids - found_ids)
+
+        if missing_ids:
+            missing_text = ", ".join(missing_ids)
+            raise ValueError(f"Unknown evaluation question IDs: {missing_text}")
+
+        questions = selected_questions
+
     if limit is not None:
-        return questions[:limit]
+        questions = questions[:limit]
 
     return questions
 
@@ -112,16 +197,26 @@ def evaluate_method(
     method: RetrievalMethod,
     generator_name: GeneratorName,
     questions: list[EvalQuestion],
+    top_k: int,
+    enable_context_expansion: bool,
+    context_expansion_window: int,
+    max_expanded_context_chunks: int,
+    max_neighbor_context_chars: int,
 ) -> dict[str, Any]:
     retriever = get_retriever(method)
     generator = build_generator(generator_name)
 
     answer_eval_results = []
     citation_eval_results = []
+    context_expansion_eval_results: list[ContextExpansionEvalResult] = []
     records: list[dict[str, Any]] = []
 
     for question in questions:
         query_classification = classify_query(question.query)
+
+        retrieval_performed = False
+        initial_chunks: list[RetrievedChunk] = []
+        final_chunks: list[RetrievedChunk] = []
 
         if should_short_circuit_answer(query_classification):
             response = build_routing_abstention_response(
@@ -129,16 +224,29 @@ def evaluate_method(
                 retrieval_strategy=method,
             )
         else:
+            retrieval_performed = True
+
             with SessionLocal() as session:
-                chunks = retriever.retrieve(
+                initial_chunks = retriever.retrieve(
                     session=session,
                     query=question.query,
-                    top_k=settings.retrieval.top_k,
+                    top_k=top_k,
                 )
 
-            response: AnswerResponse = generator.generate(
+                final_chunks = initial_chunks
+
+                if enable_context_expansion:
+                    final_chunks = expand_with_neighbor_chunks(
+                        session=session,
+                        chunks=initial_chunks,
+                        window=context_expansion_window,
+                        max_chunks=max_expanded_context_chunks,
+                        max_neighbor_context_chars=(max_neighbor_context_chars),
+                    )
+
+            response = generator.generate(
                 query=question.query,
-                chunks=chunks,
+                chunks=final_chunks,
                 retrieval_strategy=method,
                 query_type=query_classification.query_type,
             )
@@ -150,8 +258,16 @@ def evaluate_method(
         )
         citation_eval = evaluate_citations(response)
 
+        context_expansion_eval = evaluate_context_expansion(
+            initial_chunks=initial_chunks,
+            final_chunks=final_chunks,
+            expansion_enabled=enable_context_expansion,
+            retrieval_performed=retrieval_performed,
+        )
+
         answer_eval_results.append(answer_eval)
         citation_eval_results.append(citation_eval)
+        context_expansion_eval_results.append(context_expansion_eval)
 
         records.append(
             {
@@ -160,15 +276,29 @@ def evaluate_method(
                 "response": serialize_model(response),
                 "answer_eval": serialize_model(answer_eval),
                 "citation_eval": serialize_model(citation_eval),
+                "context_expansion_eval": serialize_model(context_expansion_eval),
             }
         )
 
         status = "PASS" if getattr(answer_eval, "passed", False) else "FAIL"
+
+        evidence_output = ""
+
+        if question.required_evidence_sections:
+            evidence_output = (
+                " "
+                f"evidence_coverage="
+                f"{answer_eval.required_evidence_coverage:.3f} "
+                f"evidence_passed="
+                f"{answer_eval.required_evidence_passed}"
+            )
+
         print(
             f"[{method} | {generator_name}] "
             f"{question.question_id}: {status} "
             f"abstained={response.abstained} "
             f"citations={len(response.citations)}"
+            f"{evidence_output}"
         )
 
     answer_summary = summarize_answer_results(
@@ -183,14 +313,20 @@ def evaluate_method(
         citation_eval_results=citation_eval_results,
         answer_eval_results=answer_eval_results,
     )
+    context_expansion_summary = summarize_context_expansion_results(
+        results=context_expansion_eval_results,
+        expansion_enabled=enable_context_expansion,
+    )
 
     return {
         "method": method,
         "generator": generator_name,
+        "top_k": top_k,
         "supported_questions": sum(1 for question in questions if question.supported),
         "answer_summary": serialize_model(answer_summary),
         "slice_summary": [serialize_model(item) for item in slice_summary],
         "citation_summary": citation_summary,
+        "context_expansion_summary": serialize_model(context_expansion_summary),
         "records": records,
     }
 
@@ -286,6 +422,7 @@ def write_csv_report(
             response = record["response"]
             answer_eval = record["answer_eval"]
             citation_eval = record["citation_eval"]
+            context_expansion_eval = record["context_expansion_eval"]
 
             rows.append(
                 {
@@ -305,6 +442,16 @@ def write_csv_report(
                     "citation_presence_correct": answer_eval[
                         "citation_presence_correct"
                     ],
+                    "required_evidence_sections": ";".join(
+                        answer_eval["required_evidence_sections"]
+                    ),
+                    "cited_evidence_sections": ";".join(
+                        answer_eval["cited_evidence_sections"]
+                    ),
+                    "required_evidence_coverage": answer_eval[
+                        "required_evidence_coverage"
+                    ],
+                    "required_evidence_passed": answer_eval["required_evidence_passed"],
                     "passed": answer_eval["passed"],
                     "referenced_citation_ids": ";".join(
                         str(citation_id)
@@ -335,6 +482,28 @@ def write_csv_report(
                         "citation_alignment_correct"
                     ],
                     "citation_utilization": citation_eval["citation_utilization"],
+                    "retrieval_performed": context_expansion_eval[
+                        "retrieval_performed"
+                    ],
+                    "context_expansion_enabled": context_expansion_eval[
+                        "expansion_enabled"
+                    ],
+                    "initial_chunk_count": context_expansion_eval[
+                        "initial_chunk_count"
+                    ],
+                    "final_chunk_count": context_expansion_eval["final_chunk_count"],
+                    "added_neighbor_count": context_expansion_eval[
+                        "added_neighbor_count"
+                    ],
+                    "initial_context_chars": context_expansion_eval[
+                        "initial_context_chars"
+                    ],
+                    "final_context_chars": context_expansion_eval[
+                        "final_context_chars"
+                    ],
+                    "added_context_chars": context_expansion_eval[
+                        "added_context_chars"
+                    ],
                 }
             )
 
@@ -361,9 +530,15 @@ def print_summary(report: dict[str, Any]) -> None:
         generator = method_result["generator"]
         answer_summary = method_result["answer_summary"]
         citation_summary = method_result["citation_summary"]
+        context_expansion_summary = method_result["context_expansion_summary"]
 
         print(f"\nMethod: {method}")
         print(f"Generator: {generator}")
+        print(f"Initial retrieval top-k: {method_result['top_k']}")
+        print(
+            "Maximum neighbor context characters: "
+            f"{report['context_expansion']['max_neighbor_context_chars']}"
+        )
         print(f"Total questions: {answer_summary['total_questions']}")
         print(f"Supported questions: {method_result['supported_questions']}")
         print(f"Abstention accuracy: {answer_summary['abstention_accuracy']:.3f}")
@@ -372,6 +547,20 @@ def print_summary(report: dict[str, Any]) -> None:
             f"{answer_summary['citation_presence_accuracy']:.3f}"
         )
         print(f"Pass rate: {answer_summary['pass_rate']:.3f}")
+
+        required_evidence_questions = answer_summary["required_evidence_questions"]
+
+        if required_evidence_questions:
+            print("Required evidence questions: " f"{required_evidence_questions}")
+            print(
+                "Required evidence accuracy: "
+                f"{answer_summary['required_evidence_accuracy']:.3f}"
+            )
+            print(
+                "Average required evidence coverage: "
+                f"{answer_summary['average_required_evidence_coverage']:.3f}"
+            )
+
         print(
             "Citation ID validity rate: "
             f"{citation_summary['citation_ids_valid_rate']:.3f}"
@@ -384,25 +573,85 @@ def print_summary(report: dict[str, Any]) -> None:
             "Average citation utilization: "
             f"{citation_summary['average_citation_utilization']:.3f}"
         )
+        print(
+            "Average answered citation utilization: "
+            f"{citation_summary['average_answered_citation_utilization']:.3f}"
+        )
+        print(
+            "Context expansion enabled: "
+            f"{context_expansion_summary['expansion_enabled']}"
+        )
+        print(
+            "Retrieval questions: "
+            f"{context_expansion_summary['retrieval_questions']}"
+        )
+        print(
+            "Questions with added neighbors: "
+            f"{context_expansion_summary['questions_with_added_neighbors']}"
+        )
+        print(
+            "Neighbor addition rate: "
+            f"{context_expansion_summary['neighbor_addition_rate']:.3f}"
+        )
+        print(
+            "Average initial chunks: "
+            f"{context_expansion_summary['average_initial_chunks']:.3f}"
+        )
+        print(
+            "Average final chunks: "
+            f"{context_expansion_summary['average_final_chunks']:.3f}"
+        )
+        print(
+            "Average added neighbors: "
+            f"{context_expansion_summary['average_added_neighbors']:.3f}"
+        )
+        print(
+            "Average added context characters: "
+            f"{context_expansion_summary['average_added_context_chars']:.1f}"
+        )
+        print(
+            "Maximum added neighbors: "
+            f"{context_expansion_summary['max_added_neighbors']}"
+        )
 
 
 def main() -> None:
     args = parse_args()
 
+    if args.top_k <= 0:
+        raise ValueError("--top-k must be greater than 0.")
+    if args.max_neighbor_context_chars < 0:
+        raise ValueError("--max-neighbor-context-chars must be at least 0.")
+
     generator_name: GeneratorName = args.generator
     methods = resolve_methods(args.method)
-    questions = get_questions(args.eval_path, args.limit)
+    questions = get_questions(
+        eval_path=args.eval_path,
+        limit=args.limit,
+        question_ids=args.question_ids,
+    )
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
+    enable_context_expansion = (
+        settings.generation.enable_context_expansion
+        if args.enable_context_expansion is None
+        else args.enable_context_expansion
+    )
+
     method_results = [
         evaluate_method(
             method=method,
             generator_name=generator_name,
             questions=questions,
+            top_k=args.top_k,
+            enable_context_expansion=enable_context_expansion,
+            context_expansion_window=args.context_expansion_window,
+            max_expanded_context_chunks=args.max_expanded_context_chunks,
+            max_neighbor_context_chars=(args.max_neighbor_context_chars),
         )
         for method in methods
     ]
@@ -412,7 +661,15 @@ def main() -> None:
         "generator": generator_name,
         "methods": methods,
         "limit": args.limit,
+        "question_ids": args.question_ids,
         "eval_path": args.eval_path,
+        "top_k": args.top_k,
+        "context_expansion": {
+            "enabled": enable_context_expansion,
+            "window": args.context_expansion_window,
+            "max_expanded_context_chunks": args.max_expanded_context_chunks,
+            "max_neighbor_context_chars": (args.max_neighbor_context_chars),
+        },
         "method_results": method_results,
     }
 

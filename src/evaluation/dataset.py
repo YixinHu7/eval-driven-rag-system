@@ -12,6 +12,7 @@ class EvalQuestion(BaseModel):
     expected_section: Optional[str] = None
     expected_doc_id: Optional[str] = None
     accepted_doc_sections: list[str] = Field(default_factory=list)
+    required_evidence_sections: list[str] = Field(default_factory=list)
     supported: bool
     reference_notes: str
     

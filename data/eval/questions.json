@@ -235,5 +235,39 @@
       "expected_doc_id": null,
       "supported": false,
       "reference_notes": "This question is unrelated to Kubernetes documentation and should be abstained."
+    },
+    {
+      "question_id": "q025",
+      "query": "What makes up a StatefulSet Pod's stable identity, and how is its ordinal assigned and exposed?",
+      "query_type": "conceptual",
+      "expected_section": "Pod Identity",
+      "expected_doc_id": "k8s_statefulset",
+      "accepted_doc_sections": [
+        "k8s_statefulset::Pod Identity",
+        "k8s_statefulset::Ordinal Index"
+      ],
+      "required_evidence_sections": [
+        "k8s_statefulset::Pod Identity",
+        "k8s_statefulset::Ordinal Index"
+      ],
+      "supported": true,
+      "reference_notes": "A StatefulSet Pod's identity consists of an ordinal, stable network identity, and stable storage. The identity persists across rescheduling. For N replicas, ordinals are unique and default to 0 through N-1, and Kubernetes exposes the ordinal through the apps.kubernetes.io/pod-index label."
+    },
+    {
+      "question_id": "q026",
+      "query": "How does a Deployment perform a rolling update, and how does maxUnavailable limit Pod unavailability during that update?",
+      "query_type": "conceptual",
+      "expected_section": "Rolling Update Deployment",
+      "expected_doc_id": "k8s_deployment",
+      "accepted_doc_sections": [
+        "k8s_deployment::Rolling Update Deployment",
+        "k8s_deployment::Max Unavailable"
+      ],
+      "required_evidence_sections": [
+        "k8s_deployment::Rolling Update Deployment",
+        "k8s_deployment::Max Unavailable"
+      ],
+      "supported": true,
+      "reference_notes": "A Deployment rolling update gradually scales down old ReplicaSets and scales up the new ReplicaSet. maxUnavailable specifies the maximum number of Pods that may be unavailable, as an absolute number or percentage, and therefore limits how far the old ReplicaSet can be scaled down before replacement Pods become available."
     }
   ]

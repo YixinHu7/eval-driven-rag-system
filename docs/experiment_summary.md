@@ -150,3 +150,83 @@ real technical documentation
 ```
 
 The current default system uses hybrid retrieval with LLM-based grounded answer generation. The optional cross-encoder reranker is retained for future high-recall retrieval experiments but is not currently the default strategy.
+
+## Final Answer-Evaluation Results
+
+The final answer-evaluation benchmark contains:
+
+| Dataset property                 | Count |
+| -------------------------------- | ----: |
+| Total questions                  |    26 |
+| Supported questions              |    20 |
+| Unsupported questions            |     6 |
+| Required multi-section questions |     2 |
+
+The default Hybrid retriever with the LLM generator achieved:
+
+| Metric                                | Result |
+| ------------------------------------- | -----: |
+| Abstention accuracy                   |  1.000 |
+| Citation presence accuracy            |  1.000 |
+| Pass rate                             |  1.000 |
+| Citation ID validity rate             |  1.000 |
+| Citation alignment rate               |  1.000 |
+| Average citation utilization          |  0.769 |
+| Average answered citation utilization |  1.000 |
+| Required evidence accuracy            |  1.000 |
+| Average required evidence coverage    |  1.000 |
+
+The overall citation-utilization result is `0.769` because 20 of the 26 questions were supported and returned citations. The six unsupported questions correctly abstained without citations. Among answered questions, citation utilization was `1.000`.
+
+## Final Retrieval and Generation Decisions
+
+### Default Retriever
+
+Hybrid retrieval remains the default strategy.
+
+It provides the best balance of lexical document routing and semantic section retrieval. Cross-encoder reranking remains available as an optional experimental strategy, but it did not improve final answer-level performance on the current benchmark.
+
+### Context Expansion
+
+Section-neighbor expansion is retained as a configurable feature.
+
+The final experiments showed two different behaviors:
+
+* With `top_k=5`, expansion did not improve answer-level metrics but added an average of three chunks and approximately 2192 characters per retrieval question.
+* With `top_k=1`, expansion increased required evidence coverage from `0.500` to `1.000` on two targeted neighbor-dependent questions.
+
+This demonstrates that expansion is useful when initial retrieval is narrow or when evidence spans adjacent chunks, but it is not justified as an unconditional operation under the current default retrieval configuration.
+
+The recommended policy is to keep expansion disabled by default for `top_k=5` and enable it explicitly for constrained-retrieval, multi-section, or low-confidence workflows.
+
+### Final Pipeline
+
+The completed evaluated pipeline is:
+
+`query classification → early abstention → hybrid retrieval → optional reranking → optional neighbor expansion → context selection → grounded LLM generation → citation filtering → answer and evidence evaluation`
+
+The system supports:
+
+* grounded answer generation from retrieved documentation
+* safe abstention for unsupported questions
+* inline citation validation and alignment
+* required multi-section evidence coverage
+* configurable retrieval and generation behavior
+* reproducible experiment matrices
+* measurement of context-expansion quality and overhead
+
+## Current Limitations
+
+The current benchmark is relatively small and is focused on Kubernetes documentation.
+
+Answer-level performance is saturated under the default Hybrid configuration, so aggregate pass rate alone is not sufficient to distinguish every retrieval or context-processing strategy.
+
+Future evaluation should include:
+
+* more difficult multi-document questions
+* more neighbor-dependent questions
+* paraphrased and ambiguous queries
+* noisy or partially relevant retrieved context
+* retrieval-confidence calibration
+* adaptive rather than unconditional context expansion
+* token-level prompt-cost measurement

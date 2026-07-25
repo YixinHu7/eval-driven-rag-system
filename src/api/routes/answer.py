@@ -14,7 +14,7 @@ from src.routing.policy import (
     build_routing_abstention_response,
     should_short_circuit_answer,
 )
-
+from src.retrieval.context_expander import expand_with_neighbor_chunks
 
 router = APIRouter(prefix="/answer", tags=["answer"])
 
@@ -25,10 +25,11 @@ class AnswerRequest(BaseModel):
     top_k: int = Field(default=settings.retrieval.top_k, ge=1, le=20)
     generator: Literal["simple", "llm"] = "simple"
 
+
 @router.post("", response_model=AnswerResponse)
 def answer(request: AnswerRequest) -> AnswerResponse:
     query_classification = classify_query(request.query)
-    
+
     if should_short_circuit_answer(query_classification):
         return build_routing_abstention_response(
             classification=query_classification,
@@ -48,6 +49,17 @@ def answer(request: AnswerRequest) -> AnswerResponse:
             query=request.query,
             top_k=request.top_k,
         )
+
+        if settings.generation.enable_context_expansion:
+            chunks = expand_with_neighbor_chunks(
+                session=session,
+                chunks=chunks,
+                window=settings.generation.context_expansion_window,
+                max_chunks=settings.generation.max_expanded_context_chunks,
+                max_neighbor_context_chars=(
+                    settings.generation.max_neighbor_context_chars
+                ),
+            )
 
     return generator.generate(
         query=request.query,
